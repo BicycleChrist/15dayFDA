@@ -30,10 +30,10 @@ def Main():
         row = [cell.get_text(strip=True) for cell in cells]
         rows.append(row)
 
-    # Create DataFrame
+
     df = pd.DataFrame(rows, columns=headers)
 
-    # Perform data cleanup: separate 'Company' and 'Price'
+
     df['Price'] = df['Company'].apply(lambda x: x.split('$')[1] if '$' in x else None)
     df['Company'] = df['Company'].apply(lambda x: x.split('$')[0] if '$' in x else x)
 
@@ -42,12 +42,10 @@ def Main():
     columns.insert(1, columns.pop(columns.index('Price')))
     df = df[columns]
 
-    # Save DataFrame to CSV
-    df.to_csv('output.csv', index=False)
-
-    print('Data has been saved to output.csv')
-
     driver.quit()
+    return df
 
 if __name__ == "__main__":
-    Main()
+    df = Main()
+    df.to_csv('output.csv', index=False)
+    print('Data has been saved to output.csv')
