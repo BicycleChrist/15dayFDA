@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from upcomingevents import Main  # Import the Main function
 
+indx_tickers = ['XBI', 'SPY']
+
 # date to Unix timestamp 
 def date_to_unix_timestamp(year, month, day):
     return int(datetime(year, month, day).timestamp())
@@ -20,7 +22,6 @@ def generate_yahoo_finance_url(ticker, start_date, end_date):
     period2 = date_to_unix_timestamp(*end_date)
     url = f'https://finance.yahoo.com/quote/{ticker}/history/?period1={period1}&period2={period2}'
     return url
-
 
 def scrape_yahoo_finance(ticker, start_date, end_date):
     url = generate_yahoo_finance_url(ticker, start_date, end_date)
@@ -33,7 +34,6 @@ def scrape_yahoo_finance(ticker, start_date, end_date):
 
     driver.get(url)
 
-    
     WebDriverWait(driver, 5).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, 'table.table.svelte-ewueuo'))
     )
@@ -61,14 +61,16 @@ def process_and_scrape():
     tickers = df_events['Company'].unique()
     tickers = [ticker for ticker in tickers if ticker != "MeetingN/A"]
 
-    start_date = (2023, 6, 20)
+    # Add index tickers to the list of tickers to scrape
+    all_tickers = tickers + indx_tickers
+
+    start_date = (2018, 6, 20)
     end_date = (2024, 6, 20)
 
     all_data = []
 
-    
     with ThreadPoolExecutor(max_workers=None) as executor:
-        future_to_ticker = {executor.submit(scrape_yahoo_finance, ticker, start_date, end_date): ticker for ticker in tickers}
+        future_to_ticker = {executor.submit(scrape_yahoo_finance, ticker, start_date, end_date): ticker for ticker in all_tickers}
 
         for future in as_completed(future_to_ticker):
             ticker = future_to_ticker[future]
@@ -79,11 +81,9 @@ def process_and_scrape():
             except Exception as exc:
                 print(f"{ticker} generated an exception: {exc}")
 
-    
     columns = ['Ticker', 'Date', 'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
     df_all_data = pd.DataFrame(all_data, columns=columns)
 
-    
     df_all_data.to_csv('scraped_yahoo_finance_data.csv', index=False)
     print('Scraped data has been saved to scraped_yahoo_finance_data.csv')
 
