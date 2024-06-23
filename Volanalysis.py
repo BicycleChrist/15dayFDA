@@ -1,10 +1,19 @@
+from mvgarch.ugarch import UGARCH
+from mvgarch.mgarch import DCCGARCH
 import os
 import pandas as pd
 import numpy as np
 from arch import arch_model
-from mvgarch.ugarch import UGARCH
-from mvgarch.mgarch import DCCGARCH
 import matplotlib.pyplot as plt
+
+
+
+# balance between responsiveness and stability, standard GARCH models (1,2) or (2,1) seeem to be slightly better off
+# concerned about overestimating risk, the GJR-GARCH model might be appropriate. 
+# one would think that EGARCH is a preferred model for forecasting during periods of heightned vol (I.E. leading up to or following a clincial event)  
+# as it can differentiate between the impact of positive and negative shocks on volatility (leverage effect)
+# TODO: Give the FIGARCH a shot, implement some degree of forecasting 
+
 
 def prepare_data(df):
     df['Date'] = pd.to_datetime(df['Date'], format='%b %d, %Y')
@@ -23,8 +32,8 @@ def fit_univariate_garch_models(df, ticker):
     models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1),
               'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1),
               'GJR-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1),
-              'GARCH(2,1)': arch_model(ticker_data, vol='EGARCH', p=2, q=1),
-              'GARCH(1,2)': arch_model(ticker_data, vol='EGARCH', p=1, q=2),
+              'GARCH(2,1)': arch_model(ticker_data, vol='GARCH', p=2, q=1),
+              'GARCH(1,2)': arch_model(ticker_data, vol='GARCH', p=1, q=2),
               }
 
     results = {}
@@ -35,14 +44,18 @@ def fit_univariate_garch_models(df, ticker):
         bic = model_fitted.bic
         results[model_name] = {'model': model_fitted, 'AIC': aic, 'BIC': bic}
 
-        # Save conditional vs realized volatility plot
+        # compute realized volatility using a 30-day rolling window
+        realized_volatility = ticker_data.rolling(window=30).std()
+
+        # generate/save conditional vs realized volatility plot
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(model_fitted.conditional_volatility, label='Conditional Volatility')
-        ax.plot(np.sqrt(252) * ticker_data.std(), label='Realized Volatility (annualized)')
+        ax.plot(realized_volatility, label='Realized Volatility', alpha=0.7)
+        ax.plot(model_fitted.conditional_volatility, label='Conditional Volatility', alpha=0.7)
         ax.set_title(f'{ticker} - {model_name}')
         ax.set_xlabel('Date')
         ax.set_ylabel('Volatility')
         ax.legend()
+        ax.grid(True)
 
         if not os.path.exists('Volanalysisresults'):
             os.makedirs('Volanalysisresults')
@@ -54,8 +67,6 @@ def fit_univariate_garch_models(df, ticker):
 
     return best_model, results
 
-
-#TODO: DCC model fit runs (CPU 100 %), but nothing else seems to work afterwards. Likely cuz I suck
 def fit_higher_order_models(df):
     returns = df * 100
     ugarch_models = {}
@@ -71,13 +82,9 @@ def fit_higher_order_models(df):
         dcc_garch = DCCGARCH()
         dcc_garch.spec(ugarch_objs=garch_specs, returns=returns)
         dcc_garch.fit()
-        #log_likelihood = dcc_garch.qllf()
-        #return dcc_garch, log_likelihood
-        
         return dcc_garch, None
     
     return None, None
-
 
 def testmaybe(df):
     returns = df * 100
@@ -86,6 +93,8 @@ def testmaybe(df):
     dcc_garch = DCCGARCH()
     dcc_garch.spec(ugarch_objs=garch_specs, returns=returns)
     dcc_garch.fit()
+    # DCC GARCH fit
+    
     
     return dcc_garch, None
 
@@ -93,9 +102,28 @@ def GetDynamicCorrelation(dcc_garch_model):
     dynamic_correlation_results = DCCGARCH.dynamic_corr(dcc_garch_model.returns, dcc_garch_model.cond_vols, dcc_garch_model.dcc_a, dcc_garch_model.dcc_b)
     return dynamic_correlation_results
 
+
+def plot_conditional_volatilities(dcc_garch_model, log_returns):
+    cond_vols = dcc_garch_model.cond_vols
+    
+    plt.figure(figsize=(12, 8))
+    for i, ticker in enumerate(log_returns.columns):
+        plt.plot(log_returns.index, cond_vols[:, i], label=ticker)
+    
+    plt.title('Conditional Volatilities from DCC-GARCH')
+    plt.xlabel('Date')
+    plt.ylabel('Conditional Volatility')
+    plt.legend()
+    plt.grid(True)
+    
+    if not os.path.exists('Volanalysisresults'):
+        os.makedirs('Volanalysisresults')
+    plt.savefig(os.path.join('dcc_garch_output', 'dcc_garch_conditional_volatilities2.png'))
+    plt.close()
+
+
 def main():
-    # TODO: do dcc_garch in individual steps for each ticker (whole file is too big to plot properly)
-    df = pd.read_csv('scraped_yahoo_finance_data_minimal.csv')
+    df = pd.read_csv('scraped_yahoo_finance_data.csv')
     df = prepare_data(df)
     log_returns = calculate_log_returns(df)
     tickers = df.columns
@@ -111,17 +139,14 @@ def main():
     if dcc_garch:
         print(f"alpha: {dcc_garch.dcc_a}, beta: {dcc_garch.dcc_b}")
         print(f"alpha + beta: {dcc_garch.dcc_a + dcc_garch.dcc_b}")
-        #print(f"{dcc_garch.qllf}")
         dynamic_correlation = GetDynamicCorrelation(dcc_garch)
         print("\ndynamic correlation: \n")
         print(dynamic_correlation)
-        dcc_garch.plot()
-        #print(f'DCC-GARCH Model Summary: {dcc_garch}')
-        print(f'Log-Likelihood: {log_likelihood}')
-        # Optionally, you can also save plots or other outputs for DCC-GARCH here.
+        plot_conditional_volatilities(dcc_garch, log_returns)
     else:
         print('DCC-GARCH model fitting failed or not enough data for DCC-GARCH.')
 
 if __name__ == "__main__":
     main()
+
 
