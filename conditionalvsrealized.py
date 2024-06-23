@@ -22,7 +22,7 @@ def fit_garch_model(df, ticker):
     # Rescale the data
     ticker_data['LogReturn'] *= 100
 
-    model = arch_model(ticker_data['LogReturn'], vol='Garch', p=1, q=1)
+    model = arch_model(ticker_data['LogReturn'], vol='GARCH', p=1, q=1)
     model_fitted = model.fit(disp="off")
 
     # Print model summary

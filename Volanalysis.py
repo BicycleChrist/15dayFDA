@@ -54,34 +54,52 @@ def fit_univariate_garch_models(df, ticker):
 
     return best_model, results
 
+
 #TODO: DCC model fit runs (CPU 100 %), but nothing else seems to work afterwards. Likely cuz I suck
-#def fit_higher_order_models(df):
-#    returns = df * 100
-#    ugarch_models = {}
-#    for ticker in df.columns:
-#        ticker_data = returns[ticker].dropna()
-#        garch = UGARCH(order=(1, 1))
-#        garch.spec(returns=ticker_data)
-#        garch.fit()
-#        ugarch_models[ticker] = garch
-#
-#    if len(returns.columns) > 1:
-#        garch_specs = [ugarch_models[ticker] for ticker in returns.columns]
-#        dcc_garch = DCCGARCH()
-#        dcc_garch.spec(ugarch_objs=garch_specs, returns=returns)
-#        dcc_garch.fit()
-#        log_likelihood = dcc_garch.qllf()
-#
-#        return dcc_garch, log_likelihood
-#
-#    return None, None
+def fit_higher_order_models(df):
+    returns = df * 100
+    ugarch_models = {}
+    for ticker in df.columns:
+        ticker_data = returns[ticker].dropna()
+        garch = UGARCH(order=(1, 1))
+        garch.spec(returns=ticker_data)
+        garch.fit()
+        ugarch_models[ticker] = garch
+
+    if len(returns.columns) > 1:
+        garch_specs = [ugarch_models[ticker] for ticker in returns.columns]
+        dcc_garch = DCCGARCH()
+        dcc_garch.spec(ugarch_objs=garch_specs, returns=returns)
+        dcc_garch.fit()
+        #log_likelihood = dcc_garch.qllf()
+        #return dcc_garch, log_likelihood
+        
+        return dcc_garch, None
+    
+    return None, None
+
+
+def testmaybe(df):
+    returns = df * 100
+    garch_specs = [UGARCH(order=(1, 1)) for _ in range(len(returns.columns))]
+    
+    dcc_garch = DCCGARCH()
+    dcc_garch.spec(ugarch_objs=garch_specs, returns=returns)
+    dcc_garch.fit()
+    
+    return dcc_garch, None
+
+def GetDynamicCorrelation(dcc_garch_model):
+    dynamic_correlation_results = DCCGARCH.dynamic_corr(dcc_garch_model.returns, dcc_garch_model.cond_vols, dcc_garch_model.dcc_a, dcc_garch_model.dcc_b)
+    return dynamic_correlation_results
 
 def main():
-    df = pd.read_csv('scraped_yahoo_finance_data.csv')
+    # TODO: do dcc_garch in individual steps for each ticker (whole file is too big to plot properly)
+    df = pd.read_csv('scraped_yahoo_finance_data_minimal.csv')
     df = prepare_data(df)
     log_returns = calculate_log_returns(df)
     tickers = df.columns
-
+    
     for ticker in tickers:
         print(f'Analyzing volatility for {ticker}...')
         best_model, results = fit_univariate_garch_models(log_returns, ticker)
@@ -89,13 +107,21 @@ def main():
         for model_name, result in results.items():
             print(f'{model_name} - AIC: {result["AIC"]}, BIC: {result["BIC"]}')
 
-   # dcc_garch, log_likelihood = fit_higher_order_models(log_returns)
-   # if dcc_garch:
-   #     print('DCC-GARCH Model Summary:')
-   #     print(f'Log-Likelihood: {log_likelihood}')
-   #     # Optionally, you can also save plots or other outputs for DCC-GARCH here.
-   # else:
-   #     print('DCC-GARCH model fitting failed or not enough data for DCC-GARCH.')
+    dcc_garch, log_likelihood = testmaybe(log_returns)
+    if dcc_garch:
+        print(f"alpha: {dcc_garch.dcc_a}, beta: {dcc_garch.dcc_b}")
+        print(f"alpha + beta: {dcc_garch.dcc_a + dcc_garch.dcc_b}")
+        #print(f"{dcc_garch.qllf}")
+        dynamic_correlation = GetDynamicCorrelation(dcc_garch)
+        print("\ndynamic correlation: \n")
+        print(dynamic_correlation)
+        dcc_garch.plot()
+        #print(f'DCC-GARCH Model Summary: {dcc_garch}')
+        print(f'Log-Likelihood: {log_likelihood}')
+        # Optionally, you can also save plots or other outputs for DCC-GARCH here.
+    else:
+        print('DCC-GARCH model fitting failed or not enough data for DCC-GARCH.')
 
 if __name__ == "__main__":
     main()
+
