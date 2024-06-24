@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from arch import arch_model
 import matplotlib.pyplot as plt
-
+import concurrent.futures
 
 
 # balance between responsiveness and stability, standard GARCH models (1,2) or (2,1) seeem to be slightly better off
@@ -49,8 +49,8 @@ def fit_univariate_garch_models(df, ticker):
 
         # generate/save conditional vs realized volatility plot
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(realized_volatility, label='Realized Volatility', alpha=0.7)
-        ax.plot(model_fitted.conditional_volatility, label='Conditional Volatility', alpha=0.7)
+        ax.plot(realized_volatility, label='Realized Volatility', alpha=0.7, color='blue')
+        ax.plot(model_fitted.conditional_volatility, label='Conditional Volatility', alpha=0.7, color="red")
         ax.set_title(f'{ticker} - {model_name}')
         ax.set_xlabel('Date')
         ax.set_ylabel('Volatility')
@@ -118,7 +118,7 @@ def plot_conditional_volatilities(dcc_garch_model, log_returns):
     
     if not os.path.exists('Volanalysisresults'):
         os.makedirs('Volanalysisresults')
-    plt.savefig(os.path.join('dcc_garch_output', 'dcc_garch_conditional_volatilities2.png'))
+    plt.savefig(os.path.join('dcc_garch_output', 'dcc_garch_conditional_volatilities.png'))
     plt.close()
 
 
@@ -127,7 +127,7 @@ def main():
     df = prepare_data(df)
     log_returns = calculate_log_returns(df)
     tickers = df.columns
-    
+
     for ticker in tickers:
         print(f'Analyzing volatility for {ticker}...')
         best_model, results = fit_univariate_garch_models(log_returns, ticker)
