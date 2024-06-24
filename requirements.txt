@@ -1,0 +1,8 @@
+numpy
+pandas
+arch
+mvgarch
+numpy == 1.26.1
+matplotlib
+selenium
+beautifulsoup4
