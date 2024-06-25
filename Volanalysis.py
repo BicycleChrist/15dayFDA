@@ -8,8 +8,10 @@ import numpy as np
 from arch import arch_model
 from arch.univariate import *
 import matplotlib.dates as mdates
-
+import networkx as nx
 import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.animation as animation
 
 def _to_unmasked_float_array(x):
     """
@@ -32,7 +34,7 @@ def _to_unmasked_float_array(x):
 def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns):
     cond_vols = dcc_garch_model.cond_vols
 
-    fig = plt.figure(figsize=(20, 20))  # Increased figure size
+    fig = plt.figure(figsize=(20, 20))
     ax = fig.add_subplot(111, projection='3d')
 
     num_assets = cond_vols.shape[1]
@@ -49,31 +51,77 @@ def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns):
     ax.set_zlabel('Volatility', labelpad=20)
     ax.set_title('DCC-GARCH Conditional Volatilities', pad=10)
 
-    # Format the date ticks
+
     ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
     ax.yaxis.set_major_locator(mdates.MonthLocator(interval=6))
 
     # Rotate and align the tick labels so they look better
     fig.autofmt_xdate()
 
-    # Add a color bar
     cbar = fig.colorbar(surf, ax=ax, shrink=0.6, aspect=20, pad=0.1)
     cbar.set_label('Volatility', rotation=270, labelpad=20)
 
-    # Set tick labels for all assets
+    # tick labels for all assets
     ax.set_xticks(np.arange(num_assets))
     ax.set_xticklabels(log_returns.columns, rotation=90, ha='right')
 
-    # Adjust subplot parameters
+    # subplot parameters
     plt.subplots_adjust(left=0.05, right=0.95, bottom=0.1, top=0.95)
 
-    # Adjust the viewing angle for better visibility
+    # view angle
     ax.view_init(elev=20, azim=30)
 
     if not os.path.exists('Volanalysisresults'):
         os.makedirs('Volanalysisresults', exist_ok=True)
     plt.savefig(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface.png'), bbox_inches='tight', dpi=300)
     plt.close()
+
+
+
+
+def animate_correlation_network(dcc_garch_model, log_returns, threshold=0.3, save_path='Volanalysisresults/animated_cor_network.mp4'):
+    # Threshold determines extent of correlation needed for a node to be drawn at a given point in the time series (I think)
+    dynamic_correlation_result = GetDynamicCorrelation(dcc_garch_model)
+    dynamic_correlation = dynamic_correlation_result[0]
+
+
+    G = nx.Graph()
+    for asset in log_returns.columns:
+        G.add_node(asset)
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    def update(num):
+        ax.clear()
+        correlation_matrix = dynamic_correlation[num]
+        G.clear_edges()
+
+        for i, asset1 in enumerate(log_returns.columns):
+            for j, asset2 in enumerate(log_returns.columns):
+                if i < j:
+                    correlation = correlation_matrix[i, j]
+                    if abs(correlation) > threshold:
+                        G.add_edge(asset1, asset2, weight=abs(correlation))
+
+        pos = nx.kamada_kawai_layout(G)  # Kamada-Kawai layout
+        node_sizes = [dcc_garch_model.cond_vols[num, i] * 1000 for i in range(len(log_returns.columns))]
+        edge_widths = [G[u][v]['weight'] * 2 for u, v in G.edges()]
+
+        nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='red')
+        nx.draw_networkx_edges(G, pos, width=edge_widths, alpha=0.7)
+        nx.draw_networkx_labels(G, pos)
+
+        ax.set_title(f'Asset Correlation Network at time {num}')
+        ax.axis('off')
+
+    ani = animation.FuncAnimation(fig, update, frames=len(dynamic_correlation), repeat=False)
+
+    if not os.path.exists('Volanalysisresults'):
+        os.makedirs('Volanalysisresults', exist_ok=True)
+
+    ani.save(save_path, writer='ffmpeg', fps=10)
+    plt.close()
+
 
 
 
@@ -285,6 +333,7 @@ def main():
         print(dynamic_correlation)
         plot_dcc_garch_3d_surface(dcc_garch, log_returns)
         plot_conditional_volatilities(dcc_garch, log_returns)
+        animate_correlation_network(dcc_garch, log_returns, threshold=0.25)
 
 
 if __name__ == "__main__":
