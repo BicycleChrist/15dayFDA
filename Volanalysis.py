@@ -78,12 +78,13 @@ def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns):
 
 
 
-
-def animate_correlation_network(dcc_garch_model, log_returns, threshold=0.3, save_path='Volanalysisresults/animated_cor_network.mp4'):
-    # Threshold determines extent of correlation needed for a node to be drawn at a given point in the time series (I think)
+# size of the nodes during the animation represent conditonal volatility of the individual stocks at the given point in the time series
+def animate_correlation_network(dcc_garch_model, log_returns, threshold=0.4, save_path='Volanalysisresults/animated_cor_network.mp4', frame_interval=1):
     dynamic_correlation_result = GetDynamicCorrelation(dcc_garch_model)
     dynamic_correlation = dynamic_correlation_result[0]
 
+    num_timepoints = dynamic_correlation.shape[2]
+    used_indices = range(0, num_timepoints, frame_interval)
 
     G = nx.Graph()
     for asset in log_returns.columns:
@@ -93,7 +94,7 @@ def animate_correlation_network(dcc_garch_model, log_returns, threshold=0.3, sav
 
     def update(num):
         ax.clear()
-        correlation_matrix = dynamic_correlation[num]
+        correlation_matrix = dynamic_correlation[:, :, used_indices[num]]
         G.clear_edges()
 
         for i, asset1 in enumerate(log_returns.columns):
@@ -103,24 +104,27 @@ def animate_correlation_network(dcc_garch_model, log_returns, threshold=0.3, sav
                     if abs(correlation) > threshold:
                         G.add_edge(asset1, asset2, weight=abs(correlation))
 
-        pos = nx.kamada_kawai_layout(G)  # Kamada-Kawai layout
-        node_sizes = [dcc_garch_model.cond_vols[num, i] * 1000 for i in range(len(log_returns.columns))]
+        pos = nx.kamada_kawai_layout(G)
+        node_sizes = [dcc_garch_model.cond_vols[used_indices[num], i] * 1000 for i in range(len(log_returns.columns))]
         edge_widths = [G[u][v]['weight'] * 2 for u, v in G.edges()]
 
         nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='red')
         nx.draw_networkx_edges(G, pos, width=edge_widths, alpha=0.7)
         nx.draw_networkx_labels(G, pos)
 
-        ax.set_title(f'Asset Correlation Network at time {num}')
+        ax.set_title(f'Asset Correlation Network at time {used_indices[num]}')
         ax.axis('off')
 
-    ani = animation.FuncAnimation(fig, update, frames=len(dynamic_correlation), repeat=False)
+    num_frames = len(used_indices)
+    ani = animation.FuncAnimation(fig, update, frames=num_frames, repeat=False)
 
     if not os.path.exists('Volanalysisresults'):
         os.makedirs('Volanalysisresults', exist_ok=True)
 
-    ani.save(save_path, writer='ffmpeg', fps=10)
+    ani.save(save_path, writer='ffmpeg', fps=30)
     plt.close()
+
+    print(f"Created animation with {num_frames} frames")
 
 
 

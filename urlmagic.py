@@ -53,18 +53,29 @@ def scrape_yahoo_finance(ticker, start_date, end_date):
     return rows
 
 # acquire price data from YF
-def process_and_scrape():
-    # DataFrame from the Main function of upcomingevents.py
-    df_events = Main()
+def read_tickers_from_file(file_path):
+    with open(file_path, 'r') as file:
+        return [line.strip() for line in file if line.strip()]
 
-    # filter out invalid tickers, mostly just meetings/conferences
-    tickers = df_events['Company'].unique()
-    tickers = [ticker for ticker in tickers if ticker != "MeetingN/A"]
+def process_and_scrape(use_events=True, use_file=False, file_path=None):
+    all_tickers = indx_tickers.copy()
 
-    # Add index tickers to the list of tickers to scrape
-    all_tickers = tickers + indx_tickers
+    if use_events:
+        df_events = Main()
+        event_tickers = df_events['Company'].unique()
+        event_tickers = [ticker for ticker in event_tickers if ticker != "MeetingN/A"]
+        all_tickers.extend(event_tickers)
 
-    start_date = (2018, 6, 20)
+    if use_file:
+        if file_path is None:
+            raise ValueError("File path must be provided when use_file is True")
+        file_tickers = read_tickers_from_file(file_path)
+        all_tickers.extend(file_tickers)
+
+    # Remove duplicates
+    all_tickers = list(dict.fromkeys(all_tickers))
+
+    start_date = (2020, 6, 20)
     end_date = (2024, 6, 20)
 
     all_data = []
@@ -88,4 +99,4 @@ def process_and_scrape():
     print('Scraped data has been saved to scraped_yahoo_finance_data.csv')
 
 if __name__ == "__main__":
-    process_and_scrape()
+    process_and_scrape(use_events=False, use_file=True, file_path='tickerslist.txt')
