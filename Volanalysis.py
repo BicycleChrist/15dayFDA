@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from arch import arch_model
 from arch.univariate import *
+from arch.univariate import FIGARCH
 import matplotlib.dates as mdates
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -145,7 +146,8 @@ def GarchEverything(df: pd.DataFrame):
         'GARCH(1,1)':     [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH'  , p=1, q=1)               for ticker in df.columns],
         'EGARCH(1,1)':    [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='EGARCH' , p=1, q=1)               for ticker in df.columns],
         'GJR-GARCH(1,1)': [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH'  , p=1, q=1, o=1)          for ticker in df.columns],
-        'T-GARCH(1,1)':   [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='TARCH',   p=1, q=1, o=1, power=1) for ticker in df.columns],
+        'T-GARCH(1,1)':   [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH',   p=1, q=1, o=1, power=1) for ticker in df.columns],
+        'FIGARCH(1,1)':    [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='FIGARCH',   p=1, q=1, power=1)for ticker in df.columns]
     }
 
     results = {
@@ -181,12 +183,17 @@ def GarchEverything(df: pd.DataFrame):
 
 
 
+
+#TODO: FIGARCH models are supposed to have a parameter set for truncation. The option is present, as for how to properly set it im not sure
+# Adding the parameter truncation= results in unexpected type
+
 def fit_univariate_garch_models(df, ticker):
     ticker_data = df[ticker].dropna() * 100
     models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1),
               'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1),
               'GJR-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1),
               'T-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, power=1),
+              'FI-GARCH(1,1)': arch_model(ticker_data, vol='FIGARCH',p=1, q=1, power=2)
               }
 
     results = {}
