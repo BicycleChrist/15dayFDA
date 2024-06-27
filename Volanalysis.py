@@ -10,7 +10,6 @@ from arch.univariate import *
 import matplotlib.dates as mdates
 import networkx as nx
 import matplotlib.pyplot as plt
-import seaborn as sns
 import matplotlib.animation as animation
 
 def _to_unmasked_float_array(x):
@@ -143,11 +142,10 @@ def calculate_log_returns(df):
 
 def GarchEverything(df: pd.DataFrame):
     models = {
-        'GARCH(1,1)':     [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH'  , p=1, q=1)      for ticker in df.columns],
-        'EGARCH(1,1)':    [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='EGARCH' , p=1, q=1)      for ticker in df.columns],
-        'GJR-GARCH(1,1)': [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH'  , p=1, q=1, o=1) for ticker in df.columns],
-        'GARCH(2,1)':     [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH'  , p=2, q=1)      for ticker in df.columns],
-        'GARCH(1,2)':     [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='FIGARCH', p=1, q=1)      for ticker in df.columns],
+        'GARCH(1,1)':     [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH'  , p=1, q=1)               for ticker in df.columns],
+        'EGARCH(1,1)':    [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='EGARCH' , p=1, q=1)               for ticker in df.columns],
+        'GJR-GARCH(1,1)': [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='GARCH'  , p=1, q=1, o=1)          for ticker in df.columns],
+        'T-GARCH(1,1)':   [arch_model(df[ticker].dropna(), mean='LS', dist="studentst", rescale=False, vol='TARCH',   p=1, q=1, o=1, power=1) for ticker in df.columns],
     }
 
     results = {
@@ -188,8 +186,7 @@ def fit_univariate_garch_models(df, ticker):
     models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1),
               'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1),
               'GJR-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1),
-              'GARCH(2,1)': arch_model(ticker_data, vol='GARCH', p=2, q=1),
-              'GARCH(1,2)': arch_model(ticker_data, vol='GARCH', p=1, q=2),
+              'T-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, power=1),
               }
 
     results = {}
@@ -198,7 +195,7 @@ def fit_univariate_garch_models(df, ticker):
         model_fitted = model.fit(disp=True)
         aic = model_fitted.aic
         bic = model_fitted.bic
-        
+
         results[model_name] = {'model': model_fitted, 'AIC': aic, 'BIC': bic}
 
         # compute realized volatility using a 30-day rolling window
