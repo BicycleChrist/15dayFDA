@@ -6,24 +6,37 @@ from scipy import stats
 import matplotlib.pyplot as plt
 
 def prepare_data(df):
+    if df.index.name == 'Date':
+        df = df.reset_index()
+
+   
+    if 'Date' not in df.columns:
+        print("Warning: 'Date' column not found in the DataFrame. Using index as date.")
+        df['Date'] = df.index
+
+    df['Date'] = pd.to_datetime(df['Date'])
     
-    if df['Date'].dtype != 'datetime64[ns]':
-        df['Date'] = pd.to_datetime(df['Date'])
-    
-    # Sort by date
     df = df.sort_values('Date')
     
-    # Set 'Date' as index
+    # Set 'Date' as index and drop the column
     df.set_index('Date', inplace=True)
-    
+
+    if 'Adj Close' not in df.columns:
+        print("Warning: 'Adj Close' column not found. Using 'Close' column.")
+        if 'Close' in df.columns:
+            df['Adj Close'] = df['Close']
+        else:
+            raise ValueError("Neither 'Adj Close' nor 'Close' column found in the DataFrame.")
     
     return df[['Adj Close']]
+    
+    
 
 def calculate_log_returns(df):
     log_returns = np.log(df['Adj Close'] / df['Adj Close'].shift(1))
     
-    # Calculate historical volatility (20-day rolling standard deviation)
-    historical_volatility = log_returns.rolling(window=20).std() * np.sqrt(252)
+    # calc historical volatility (20-day rolling standard deviation)
+    historical_volatility = log_returns.rolling(window=30).std() * np.sqrt(252)
     
     return log_returns, historical_volatility
 
@@ -53,14 +66,13 @@ def fit_univariate_garch_models(returns, ticker):
     return best_model, best_model_name
 
 def testmaybe(ticker_data):
-    # Assuming ticker_data is a DataFrame with 'Date' and 'Adj Close' columns
     ticker_data = prepare_data(ticker_data)
     log_returns, historical_volatility = calculate_log_returns(ticker_data)
     
-    # Fit GARCH model
+   
     best_model, best_model_name = fit_univariate_garch_models(log_returns.dropna(), 'Ticker')
     
-    # Generate GARCH volatility forecast
+    
     garch_volatility = pd.Series(best_model.conditional_volatility, index=log_returns.dropna().index)
     
     # Plot results
@@ -83,7 +95,7 @@ def testmaybe(ticker_data):
     
     return log_returns, historical_volatility, garch_volatility
 
-# This function can be used for multiple tickers if needed
+
 def analyze_multiple_tickers(df):
     results = {}
     for ticker in df['Ticker'].unique():
@@ -97,8 +109,5 @@ def analyze_multiple_tickers(df):
     return results
 
 if __name__ == "__main__":
-    # Example usage
     df = pd.read_csv('scraped_yahoo_finance_data_minimal.csv')
     results = analyze_multiple_tickers(df)
-    # You can now access results for each ticker
-    # e.g., results['NKTX']['log_returns'], results['NKTX']['historical_volatility'], etc.

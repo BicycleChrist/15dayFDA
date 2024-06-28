@@ -139,7 +139,8 @@ def prepare_data(df):
 
 def calculate_log_returns(df):
     log_returns = np.log(df / df.shift(1)).dropna()
-    return log_returns
+    historical_volatility = log_returns.rolling(window=30).std() * np.sqrt(252)
+    return log_returns, historical_volatility
 
 def GarchEverything(df: pd.DataFrame):
     models = {
@@ -184,16 +185,18 @@ def GarchEverything(df: pd.DataFrame):
 
 
 # FIGARCH model has to be constructed directly as guy who wrote the package instructed 
+# https://github.com/bashtage/arch/issues/735
 
 def fit_univariate_garch_models(df, ticker):
     ticker_data = df[ticker].dropna() * 100
-    figarch_model = ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=2000))
-    figarch_res = figarch_model.fit()
-    print(figarch_res.summary())
+    #figarch_model = ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=1000))
+    #figarch_res = figarch_model.fit()
+    #print(figarch_res.summary())
     models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1),
               'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1),
-              'GJR-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1),
+              'GJR-GARCH(1,1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1),
               'T-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, power=1),
+              'FIGARCH(1,1,2,d)': ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=1000))
               }
 
     results = {}
@@ -322,7 +325,7 @@ def test_arch_stuff(df, ticker):
 def main():
     df = pd.read_csv('scraped_yahoo_finance_data.csv')
     df = prepare_data(df)
-    log_returns = calculate_log_returns(df)
+    log_returns, historical_volatility  = calculate_log_returns(df)
     tickers = df.columns
     
     for ticker in tickers:

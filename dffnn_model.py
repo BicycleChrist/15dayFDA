@@ -35,19 +35,14 @@ class DFFNN(nn.Module):
             x = self.activation(ln(layer(x)))
         return self.output_layer(x)
 
-
-
 def normalize_data(data):
     return (data - np.mean(data)) / np.std(data)
-
-
-
 
 def prepare_features(log_returns, historical_volatility, garch_volatility, lookback=10):
     features = []
     targets = []
 
-    # Ensure all inputs have the same index
+    # index check
     common_index = historical_volatility.index.intersection(garch_volatility.index)
     historical_volatility = historical_volatility.loc[common_index]
     garch_volatility = garch_volatility.loc[common_index]
@@ -65,9 +60,18 @@ def prepare_features(log_returns, historical_volatility, garch_volatility, lookb
 
     return np.array(features), np.array(targets)
 
+def prepare_forecast_features(historical_volatility, garch_volatility, lookback=10):
+    # ensure we're working with the most recent data
+    historical_volatility = historical_volatility.iloc[-lookback:]
+    garch_volatility = garch_volatility.iloc[-lookback:]
+    
+    feature = np.concatenate([
+        historical_volatility.values,
+        garch_volatility.values
+    ])
+    return feature.reshape(1, -1)  # Reshape to match the model's input shape
 
-
-def train_dffnn(features, targets, model, epochs=500, batch_size=32, learning_rate=0.001):
+def train_dffnn(features, targets, model, epochs=400, batch_size=32, learning_rate=0.001):
     X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.2, random_state=42)
 
     train_dataset = TensorDataset(torch.FloatTensor(X_train), torch.FloatTensor(y_train))
@@ -115,6 +119,65 @@ def plot_results(y_true, y_pred):
     plt.legend()
     plt.show()
 
+def forecast_single_ticker(model, df, forecast_horizon=10):
+    log_returns, historical_volatility = calculate_log_returns(df)
+    
+    best_model, _ = fit_univariate_garch_models(log_returns.dropna(), 'Ticker')
+    garch_volatility = pd.Series(best_model.conditional_volatility, index=log_returns.dropna().index)
+    
+    aligned_data = pd.concat([historical_volatility, garch_volatility], axis=1).dropna()
+    aligned_data.columns = ['historical', 'garch']
+    
+    forecasts = []
+    
+    for _ in range(forecast_horizon):
+        features = prepare_forecast_features(aligned_data['historical'], aligned_data['garch'])
+        
+        model.eval()
+        with torch.no_grad():
+            prediction = model(torch.FloatTensor(features)).item()
+        
+        forecasts.append(prediction)
+        
+        # Update aligned_data for the next iteration
+        new_date = aligned_data.index[-1] + pd.Timedelta(days=1)
+        new_row = pd.DataFrame({'historical': [prediction], 'garch': [prediction]}, index=[new_date])
+        aligned_data = pd.concat([aligned_data, new_row])
+    
+    forecast_dates = pd.date_range(start=aligned_data.index[-forecast_horizon], periods=forecast_horizon)
+    forecast_df = pd.DataFrame({'Forecasted_Volatility': forecasts}, index=forecast_dates)
+    
+    return forecast_df
+
+def forecast_volatility(model, df, forecast_horizon=10):
+    try:
+        print("DataFrame columns before processing:", df.columns)
+        print("DataFrame index name before processing:", df.index.name)
+        
+        # Check if there are multiple tickers
+        if 'Ticker' in df.columns:
+            # Group by ticker and forecast for each
+            forecasts = {}
+            for ticker, group in df.groupby('Ticker'):
+                print(f"Processing ticker: {ticker}")
+                ticker_df = prepare_data(group)
+                print("Ticker DataFrame columns after prepare_data:", ticker_df.columns)
+                print("Ticker DataFrame index name after prepare_data:", ticker_df.index.name)
+                ticker_forecast = forecast_single_ticker(model, ticker_df, forecast_horizon)
+                forecasts[ticker] = ticker_forecast
+            return forecasts
+        else:
+            # Single ticker case
+            df = prepare_data(df)
+            print("DataFrame columns after prepare_data:", df.columns)
+            print("DataFrame index name after prepare_data:", df.index.name)
+            return forecast_single_ticker(model, df, forecast_horizon)
+    except Exception as e:
+        print(f"An error occurred during forecasting: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def main():
     df = pd.read_csv('scraped_yahoo_finance_data_minimal.csv')
     df = prepare_data(df)
@@ -132,7 +195,6 @@ def main():
     print(f"Features shape: {features.shape}")
     print(f"Targets shape: {targets.shape}")
     
-    
     # Create and train DFFNN model
     input_size = features.shape[1]
     hidden_sizes = [64, 32, 16, 8]
@@ -141,11 +203,42 @@ def main():
     model = DFFNN(input_size, hidden_sizes, output_size)
     trained_model, X_test, y_test = train_dffnn(features, targets, model)
     
-    # Evaluate model
+    # model eval
     predictions = evaluate_model(trained_model, X_test, y_test)
     
     # Plot results
     plot_results(y_test, predictions.flatten())
+
+    #  forecast
+    forecasts = forecast_volatility(trained_model, df, forecast_horizon=10)
+    if forecasts is not None:
+        if isinstance(forecasts, dict):
+            for ticker, forecast_df in forecasts.items():
+                print(f"10-day Volatility Forecast for {ticker}:")
+                print(forecast_df)
+                
+                plt.figure(figsize=(12, 6))
+                plt.plot(forecast_df.index, forecast_df['Forecasted_Volatility'], marker='o')
+                plt.title(f'10-day Volatility Forecast for {ticker}')
+                plt.xlabel('Date')
+                plt.ylabel('Forecasted Volatility')
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                plt.show()
+        else:
+            print("10-day Volatility Forecast:")
+            print(forecasts)
+            
+            plt.figure(figsize=(12, 6))
+            plt.plot(forecasts.index, forecasts['Forecasted_Volatility'], marker='o')
+            plt.title('10-day Volatility Forecast')
+            plt.xlabel('Date')
+            plt.ylabel('Forecasted Volatility')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.show()
+    else:
+        print("Forecasting failed. Please check your data and model.")
 
 if __name__ == "__main__":
     main()
