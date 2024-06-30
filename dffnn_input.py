@@ -40,46 +40,67 @@ def calculate_log_returns(df):
     
     return log_returns, historical_volatility
 
-def fit_univariate_garch_models(returns, ticker):
-   
-    model = arch_model(returns, vol='GARCH', p=1, q=1)
-    results = model.fit(disp='off')
-    
-    
-    egarch_model = arch_model(returns, vol='EGARCH', p=1, q=1)
-    egarch_results = egarch_model.fit(disp='off')
-    
-    
-    gjr_model = arch_model(returns, vol='GARCH', p=1, o=1, q=1)
-    gjr_results = gjr_model.fit(disp='off')
-    
-    
-    models = [results, egarch_results, gjr_results]
-    best_model = min(models, key=lambda x: x.aic)
-    
-    model_names = ['GARCH(1,1)', 'EGARCH(1,1)', 'GJR-GARCH(1,1)']
-    best_model_name = model_names[models.index(best_model)]
-    
-    print(f"Best model for {ticker}: {best_model_name}")
+
+def fit_multiple_garch_models(returns):
+    models = {
+        'APGARCH': {
+            'ged': arch_model(returns, vol='APARCH', p=1, q=1, dist='ged'),
+            'normal': arch_model(returns, vol='APARCH', p=1, q=1, dist='normal'),
+            't': arch_model(returns, vol='APARCH', p=1, q=1, dist='t')
+        },
+        'EGARCH': {
+            'ged': arch_model(returns, vol='EGARCH', p=1, q=1, dist='ged'),
+            'normal': arch_model(returns, vol='EGARCH', p=1, q=1, dist='normal'),
+            't': arch_model(returns, vol='EGARCH', p=1, q=1, dist='t')
+        },
+        'GARCH': {
+            'ged': arch_model(returns, vol='GARCH', p=1, q=1, dist='ged'),
+            'normal': arch_model(returns, vol='GARCH', p=1, q=1, dist='normal'),
+            't': arch_model(returns, vol='GARCH', p=1, q=1, dist='t')
+        }
+    }
+
+    results = {}
+    for model_type, dist_models in models.items():
+        for dist, model in dist_models.items():
+            try:
+                result = model.fit(disp='off')
+                results[f'{model_type}_{dist}'] = result
+            except:
+                print(f"Failed to fit {model_type} model with {dist} distribution")
+
+    best_model = min(results.values(), key=lambda x: x.aic)
+    best_model_name = [k for k, v in results.items() if v == best_model][0]
+
+    print(f"Best model: {best_model_name}")
     print(best_model.summary())
+
+    return results, best_model, best_model_name
+
+def prepare_garch_features(returns):
+    models, best_model, best_model_name = fit_multiple_garch_models(returns)
     
-    return best_model, best_model_name
+    features = pd.DataFrame(index=returns.index)
+    for model_name, model in models.items():
+        features[f'HV_{model_name}'] = pd.Series(model.conditional_volatility, index=returns.index)
+    
+    return features, best_model, best_model_name
 
 def testmaybe(ticker_data):
     ticker_data = prepare_data(ticker_data)
     log_returns, historical_volatility = calculate_log_returns(ticker_data)
     
-   
-    best_model, best_model_name = fit_univariate_garch_models(log_returns.dropna(), 'Ticker')
+    garch_features, best_model, best_model_name = prepare_garch_features(log_returns.dropna())
     
-    
-    garch_volatility = pd.Series(best_model.conditional_volatility, index=log_returns.dropna().index)
+    # Combine historical volatility with GARCH features
+    all_features = pd.concat([historical_volatility, garch_features], axis=1).dropna()
+    all_features.columns = ['HV'] + list(garch_features.columns)
     
     # Plot results
     plt.figure(figsize=(12, 6))
-    plt.plot(historical_volatility, label='Historical Volatility')
-    plt.plot(garch_volatility, label=f'{best_model_name} Volatility')
-    plt.title('Historical vs GARCH Volatility')
+    plt.plot(all_features['HV'], label='Historical Volatility')
+    plt.plot(all_features[f'HV_{best_model_name}'], label=f'Best Model: {best_model_name}')
+    plt.title('Historical vs Best GARCH Model Volatility')
     plt.legend()
     plt.show()
     
@@ -93,18 +114,16 @@ def testmaybe(ticker_data):
     print('Jarque-Bera statistic:', jb_stat)
     print('Jarque-Bera p-value:', jb_pvalue)
     
-    return log_returns, historical_volatility, garch_volatility
-
+    return log_returns, all_features
 
 def analyze_multiple_tickers(df):
     results = {}
     for ticker in df['Ticker'].unique():
         ticker_data = df[df['Ticker'] == ticker]
-        log_returns, hist_vol, garch_vol = testmaybe(ticker_data)
+        log_returns, features = testmaybe(ticker_data)
         results[ticker] = {
             'log_returns': log_returns,
-            'historical_volatility': hist_vol,
-            'garch_volatility': garch_vol
+            'features': features
         }
     return results
 

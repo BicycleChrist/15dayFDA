@@ -6,8 +6,8 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Import necessary functions from Volanalysis.py
-from dffnn_input import calculate_log_returns, fit_univariate_garch_models, prepare_data
+# Import necessary functions from dffnn_input.py
+from dffnn_input import prepare_data, calculate_log_returns, prepare_garch_features
 
 class DFFNN(nn.Module):
     def __init__(self, input_size, hidden_sizes, output_size):
@@ -35,43 +35,24 @@ class DFFNN(nn.Module):
             x = self.activation(ln(layer(x)))
         return self.output_layer(x)
 
-def normalize_data(data):
-    return (data - np.mean(data)) / np.std(data)
-
-def prepare_features(log_returns, historical_volatility, garch_volatility, lookback=10):
+def prepare_features(log_returns, all_features, lookback=10):
     features = []
     targets = []
 
-    # index check
-    common_index = historical_volatility.index.intersection(garch_volatility.index)
-    historical_volatility = historical_volatility.loc[common_index]
-    garch_volatility = garch_volatility.loc[common_index]
-    log_returns = log_returns.loc[common_index]
-
-    for i in range(lookback, len(historical_volatility)):
-        feature = np.concatenate([
-            historical_volatility.iloc[i-lookback:i].values,
-            garch_volatility.iloc[i-lookback:i].values
-        ])
-        target = historical_volatility.iloc[i]
+    for i in range(lookback, len(all_features)):
+        feature = all_features.iloc[i-lookback:i].values.flatten()
+        target = all_features['HV'].iloc[i]
 
         features.append(feature)
         targets.append(target)
 
     return np.array(features), np.array(targets)
 
-def prepare_forecast_features(historical_volatility, garch_volatility, lookback=10):
-    # ensure we're working with the most recent data
-    historical_volatility = historical_volatility.iloc[-lookback:]
-    garch_volatility = garch_volatility.iloc[-lookback:]
-    
-    feature = np.concatenate([
-        historical_volatility.values,
-        garch_volatility.values
-    ])
-    return feature.reshape(1, -1)  # Reshape to match the model's input shape
+def prepare_forecast_features(all_features, lookback=10):
+    feature = all_features.iloc[-lookback:].values.flatten()
+    return feature.reshape(1, -1)
 
-def train_dffnn(features, targets, model, epochs=400, batch_size=32, learning_rate=0.001):
+def train_dffnn(features, targets, model, epochs=30, batch_size=32, learning_rate=0.002):
     X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.2, random_state=42)
 
     train_dataset = TensorDataset(torch.FloatTensor(X_train), torch.FloatTensor(y_train))
@@ -87,7 +68,7 @@ def train_dffnn(features, targets, model, epochs=400, batch_size=32, learning_ra
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y.unsqueeze(1))
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Add gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
         if (epoch + 1) % 10 == 0:
@@ -102,7 +83,7 @@ def evaluate_model(model, X_test, y_test):
     
     if np.isnan(predictions).any():
         print("Warning: NaN values in predictions")
-        predictions = np.nan_to_num(predictions)  # Replace NaNs with 0
+        predictions = np.nan_to_num(predictions)
     
     mse = np.mean((predictions - y_test.reshape(-1, 1))**2)
     print(f"Mean Squared Error: {mse:.4f}")
@@ -120,18 +101,17 @@ def plot_results(y_true, y_pred):
     plt.show()
 
 def forecast_single_ticker(model, df, forecast_horizon=10):
+    df = prepare_data(df)
     log_returns, historical_volatility = calculate_log_returns(df)
+    garch_features, _, _ = prepare_garch_features(log_returns.dropna())
     
-    best_model, _ = fit_univariate_garch_models(log_returns.dropna(), 'Ticker')
-    garch_volatility = pd.Series(best_model.conditional_volatility, index=log_returns.dropna().index)
-    
-    aligned_data = pd.concat([historical_volatility, garch_volatility], axis=1).dropna()
-    aligned_data.columns = ['historical', 'garch']
+    all_features = pd.concat([historical_volatility, garch_features], axis=1).dropna()
+    all_features.columns = ['HV'] + list(garch_features.columns)
     
     forecasts = []
     
     for _ in range(forecast_horizon):
-        features = prepare_forecast_features(aligned_data['historical'], aligned_data['garch'])
+        features = prepare_forecast_features(all_features)
         
         model.eval()
         with torch.no_grad():
@@ -139,38 +119,28 @@ def forecast_single_ticker(model, df, forecast_horizon=10):
         
         forecasts.append(prediction)
         
-        # Update aligned_data for the next iteration
-        new_date = aligned_data.index[-1] + pd.Timedelta(days=1)
-        new_row = pd.DataFrame({'historical': [prediction], 'garch': [prediction]}, index=[new_date])
-        aligned_data = pd.concat([aligned_data, new_row])
+        # update all_features for the next iteration
+        new_date = all_features.index[-1] + pd.Timedelta(days=1)
+        new_row = pd.DataFrame({col: [prediction] for col in all_features.columns}, index=[new_date])
+        all_features = pd.concat([all_features, new_row])
     
-    forecast_dates = pd.date_range(start=aligned_data.index[-forecast_horizon], periods=forecast_horizon)
+    forecast_dates = pd.date_range(start=all_features.index[-forecast_horizon], periods=forecast_horizon)
     forecast_df = pd.DataFrame({'Forecasted_Volatility': forecasts}, index=forecast_dates)
     
     return forecast_df
 
 def forecast_volatility(model, df, forecast_horizon=10):
     try:
-        print("DataFrame columns before processing:", df.columns)
-        print("DataFrame index name before processing:", df.index.name)
-        
-        # Check if there are multiple tickers
         if 'Ticker' in df.columns:
-            # Group by ticker and forecast for each
             forecasts = {}
             for ticker, group in df.groupby('Ticker'):
                 print(f"Processing ticker: {ticker}")
                 ticker_df = prepare_data(group)
-                print("Ticker DataFrame columns after prepare_data:", ticker_df.columns)
-                print("Ticker DataFrame index name after prepare_data:", ticker_df.index.name)
                 ticker_forecast = forecast_single_ticker(model, ticker_df, forecast_horizon)
                 forecasts[ticker] = ticker_forecast
             return forecasts
         else:
-            # Single ticker case
             df = prepare_data(df)
-            print("DataFrame columns after prepare_data:", df.columns)
-            print("DataFrame index name after prepare_data:", df.index.name)
             return forecast_single_ticker(model, df, forecast_horizon)
     except Exception as e:
         print(f"An error occurred during forecasting: {str(e)}")
@@ -183,33 +153,27 @@ def main():
     df = prepare_data(df)
     log_returns, historical_volatility = calculate_log_returns(df)
     
-    best_model, _ = fit_univariate_garch_models(log_returns.dropna(), 'Ticker')
-    garch_volatility = pd.Series(best_model.conditional_volatility, index=log_returns.dropna().index)
+    garch_features, _, _ = prepare_garch_features(log_returns.dropna())
     
-    # Align the indices of historical_volatility and garch_volatility
-    aligned_data = pd.concat([historical_volatility, garch_volatility], axis=1).dropna()
+    all_features = pd.concat([historical_volatility, garch_features], axis=1).dropna()
+    all_features.columns = ['HV'] + list(garch_features.columns)
     
-    # Prepare features for DFFNN
-    features, targets = prepare_features(log_returns, aligned_data.iloc[:, 0], aligned_data.iloc[:, 1])
+    features, targets = prepare_features(log_returns, all_features)
     
     print(f"Features shape: {features.shape}")
     print(f"Targets shape: {targets.shape}")
     
-    # Create and train DFFNN model
     input_size = features.shape[1]
-    hidden_sizes = [64, 32, 16, 8]
+    hidden_sizes = [64, 32, 16]
     output_size = 1
     
     model = DFFNN(input_size, hidden_sizes, output_size)
     trained_model, X_test, y_test = train_dffnn(features, targets, model)
     
-    # model eval
     predictions = evaluate_model(trained_model, X_test, y_test)
     
-    # Plot results
     plot_results(y_test, predictions.flatten())
 
-    #  forecast
     forecasts = forecast_volatility(trained_model, df, forecast_horizon=10)
     if forecasts is not None:
         if isinstance(forecasts, dict):

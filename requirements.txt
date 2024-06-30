@@ -7,3 +7,4 @@ matplotlib
 selenium
 beautifulsoup4
 networkx
+torch

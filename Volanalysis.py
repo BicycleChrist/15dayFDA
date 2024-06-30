@@ -1,11 +1,9 @@
 import mpl_toolkits.mplot3d
-import numpy
 from mvgarch.ugarch import UGARCH
 from mvgarch.mgarch import DCCGARCH
 import os
 import pandas as pd
 import numpy as np
-from arch import arch_model
 from arch.univariate import *
 from arch.univariate import FIGARCH
 import matplotlib.dates as mdates
@@ -183,7 +181,6 @@ def GarchEverything(df: pd.DataFrame):
 
 
 
-
 # FIGARCH model has to be constructed directly as guy who wrote the package instructed 
 # https://github.com/bashtage/arch/issues/735
 
@@ -191,12 +188,16 @@ def fit_univariate_garch_models(df, ticker):
     ticker_data = df[ticker].dropna() * 100
     #figarch_model = ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=1000))
     #figarch_res = figarch_model.fit()
+    aparch_model = LS(ticker_data, volatility=APARCH(p=1,q=1,o=1,delta=1.3))
+    #aparch_res = aparch_model.fit()
+    #print(aparch_res.summary())
     #print(figarch_res.summary())
     models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1),
               'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1),
               'GJR-GARCH(1,1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1),
               'T-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, power=1),
-              'FIGARCH(1,1,2,d)': ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=1000))
+              'FIGARCH(1,1,2,d)': ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=2000)),
+              'APARCH:(1,1,1,d)':ConstantMean(ticker_data, volatility=APARCH(p=1,q=1,o=1,delta=0.7))
               }
 
     results = {}
@@ -294,31 +295,6 @@ def plot_conditional_volatilities(dcc_garch_model, log_returns):
 
 import arch.data.core_cpi
 # https://arch.readthedocs.io/en/latest/univariate/introduction.html#arch.univariate.arch_model
-def test_arch_stuff(df, ticker):
-    ticker_data = df[ticker].dropna() # don't multiply by 100 here
-    # rescale prevents convergence issues
-    am = ConstantMean(ticker_data, rescale=True)
-    am.volatility = GARCH(1, 0, 1)
-    am.distribution = Normal()
-    res = am.fit()
-    res.summary()
-    
-    core_cpi = arch.data.core_cpi.load()
-    ann_inflation = 100 * core_cpi.CPILFESL.pct_change().dropna()
-    #ar = ARX(100 * ann_inflation, rescale=True, lags=list(range(1,12)))
-    ar = ARX(100 * ann_inflation, rescale=True, lags=[1,3,12])
-    ar.distribution = StudentsT()
-    # supposedly, StudentsT distribution is superior to normal-distribution; degree-of-freedom is approx. 8
-    res = ar.fit(update_freq=0, disp="off")
-    forecasts = res.forecast(horizon=5, method='simulation', simulations=50)
-
-    y = np.random.randn(100)
-    x = np.random.randn(100,2)
-    ls = LS(y, x)
-    ls.volatility = GARCH(1, 0, 1)
-    ls.distribution = Normal()
-    res = ls.fit()
-    res.summary()
 
 
 
