@@ -34,7 +34,7 @@ def prepare_data(df):
 def calculate_log_returns_alt(adjclose):
     log_returns = np.log(adjclose / adjclose.shift(1))
     
-    # calc historical volatility (20-day rolling standard deviation)
+    # calc historical volatility, x day rolling standard deviation, annualized
     historical_volatility = log_returns.rolling(window=30).std() * np.sqrt(252)
     
     return log_returns, historical_volatility

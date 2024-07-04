@@ -192,36 +192,64 @@ def LoadFiles():
     return loaded_stuff
 
 
+def backtest_model(model, features, targets, window_size=30, step_size=1):
+    predictions = []
+    actual_values = []
+    
+    for i in range(0, len(features) - window_size, step_size):
+        train_features = features[i:i+window_size]
+        train_targets = targets[i:i+window_size]
+        
+        # Retrain the model on this window
+        model = train_dffnn(train_features, train_targets, model, epochs=5)
+        
+        # Make a prediction for the next day
+        with torch.no_grad():
+            next_day_prediction = model(torch.FloatTensor(features[i+window_size].reshape(1, -1))).item()
+        
+        predictions.append(next_day_prediction)
+        actual_values.append(targets[i+window_size])
+    
+    return np.array(predictions), np.array(actual_values)
+
+def plot_backtest_results(predictions, actual_values, ticker):
+    plt.figure(figsize=(12, 6))
+    plt.plot(actual_values, label='Actual Volatility', alpha=0.7)
+    plt.plot(predictions, label='Predicted Volatility', alpha=0.7)
+    plt.title(f'Backtesting Results: Predicted vs Actual Volatility for {ticker}')
+    plt.xlabel('Time')
+    plt.ylabel('Volatility')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
 def main():
     loadedStuff = LoadFiles()
-    # for combining input data, the features and targets need to be interleaved
-    splitStuff = []
-    for (df, features, targets) in loadedStuff:
-       X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.20, random_state=42)
-       splitStuff.append((features, X_train, X_test, y_train, y_test))
-
-    features, X_train, X_test, y_train, y_test = splitStuff[0] 
-    features2, X_train2, X_test2, y_train2, y_test2 = splitStuff[1]
     
-    features_combined = np.concatenate((features, features2), axis=0)
-    X_train_combined  = np.concatenate((X_train , X_train2 ), axis=0)
-    X_test_combined   = np.concatenate((X_test  , X_test2  ), axis=0)
-    y_train_combined  = np.concatenate((y_train , y_train2 ), axis=0)
-    y_test_combined   = np.concatenate((y_test  , y_test2  ), axis=0)
-    
-    input_size = features_combined.shape[1]
-    hidden_sizes = [64, 32, 16]
-    output_size = 1
-    
-    model = DFFNN(input_size, hidden_sizes, output_size)
-    trained_model = train_dffnn(X_train_combined, y_train_combined, model)
-    
-    predictions = evaluate_model(trained_model, X_test_combined, y_test_combined)
-    
-    plot_results(y_test_combined, predictions.flatten())
-
-    for (df, _, _) in loadedStuff:
-        # should we combine the input dataframes for this step??
+    for idx, (df, features, targets) in enumerate(loadedStuff):
+        print(f"Processing dataset {idx + 1}")
+        
+        X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.20, random_state=42)
+        
+        input_size = features.shape[1]
+        hidden_sizes = [64, 32, 16]
+        output_size = 1
+        
+        model = DFFNN(input_size, hidden_sizes, output_size)
+        trained_model = train_dffnn(X_train, y_train, model)
+        
+        predictions = evaluate_model(trained_model, X_test, y_test)
+        
+        plot_results(y_test, predictions.flatten())
+        
+        # Perform backtesting
+        backtest_predictions, backtest_actual = backtest_model(trained_model, features, targets)
+        
+        # Plot backtesting results
+        ticker = df['Ticker'].iloc[0] if 'Ticker' in df.columns else f"Dataset {idx + 1}"
+        plot_backtest_results(backtest_predictions, backtest_actual, ticker)
+        
+        # Forecast future volatility
         forecasts = forecast_volatility(trained_model, df, forecast_horizon=10)
         if forecasts is not None:
             if isinstance(forecasts, dict):
@@ -254,3 +282,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
