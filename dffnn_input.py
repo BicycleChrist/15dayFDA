@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 def prepare_data(df):
     if df.index.name == 'Date':
         df = df.reset_index()
-
    
     if 'Date' not in df.columns:
         print("Warning: 'Date' column not found in the DataFrame. Using index as date.")
@@ -28,9 +27,18 @@ def prepare_data(df):
         else:
             raise ValueError("Neither 'Adj Close' nor 'Close' column found in the DataFrame.")
     
-    return df[['Adj Close']]
+    return df['Adj Close']
+
+
+
+def calculate_log_returns_alt(adjclose):
+    log_returns = np.log(adjclose / adjclose.shift(1))
     
+    # calc historical volatility (20-day rolling standard deviation)
+    historical_volatility = log_returns.rolling(window=30).std() * np.sqrt(252)
     
+    return log_returns, historical_volatility
+
 
 def calculate_log_returns(df):
     log_returns = np.log(df['Adj Close'] / df['Adj Close'].shift(1))
@@ -46,17 +54,20 @@ def fit_multiple_garch_models(returns):
         'APGARCH': {
             'ged': arch_model(returns, vol='APARCH', p=1, q=1, dist='ged'),
             'normal': arch_model(returns, vol='APARCH', p=1, q=1, dist='normal'),
-            't': arch_model(returns, vol='APARCH', p=1, q=1, dist='t')
+            'studentst': arch_model(returns, vol='APARCH', p=1, q=1, dist='studentst'),
+            'skewt': arch_model(returns, vol='APARCH', p=1, q=1, dist='skewt'),
         },
         'EGARCH': {
             'ged': arch_model(returns, vol='EGARCH', p=1, q=1, dist='ged'),
             'normal': arch_model(returns, vol='EGARCH', p=1, q=1, dist='normal'),
-            't': arch_model(returns, vol='EGARCH', p=1, q=1, dist='t')
+            'studentst': arch_model(returns, vol='EGARCH', p=1, q=1, dist='studentst'),
+            'skewt': arch_model(returns, vol='EGARCH', p=1, q=1, dist='skewt'),
         },
         'GARCH': {
             'ged': arch_model(returns, vol='GARCH', p=1, q=1, dist='ged'),
             'normal': arch_model(returns, vol='GARCH', p=1, q=1, dist='normal'),
-            't': arch_model(returns, vol='GARCH', p=1, q=1, dist='t')
+            'studentst': arch_model(returns, vol='GARCH', p=1, q=1, dist='studentst'),
+            'skewt': arch_model(returns, vol='GARCH', p=1, q=1, dist='skewt'),
         }
     }
 

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # Import necessary functions from dffnn_input.py
-from dffnn_input import prepare_data, calculate_log_returns, prepare_garch_features
+from dffnn_input import prepare_data, calculate_log_returns_alt, prepare_garch_features
 
 class DFFNN(nn.Module):
     def __init__(self, input_size, hidden_sizes, output_size):
@@ -52,11 +52,10 @@ def prepare_forecast_features(all_features, lookback=10):
     feature = all_features.iloc[-lookback:].values.flatten()
     return feature.reshape(1, -1)
 
-def train_dffnn(features, targets, model, epochs=30, batch_size=32, learning_rate=0.002):
-    X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.2, random_state=42)
-
+def train_dffnn(X_train, y_train, model, epochs=30, batch_size=32, learning_rate=0.002):
+    
     train_dataset = TensorDataset(torch.FloatTensor(X_train), torch.FloatTensor(y_train))
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
 
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -70,11 +69,11 @@ def train_dffnn(features, targets, model, epochs=30, batch_size=32, learning_rat
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-
-        if (epoch + 1) % 10 == 0:
+            
             print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}')
+    
+    return model
 
-    return model, X_test, y_test
 
 def evaluate_model(model, X_test, y_test):
     model.eval()
@@ -101,8 +100,8 @@ def plot_results(y_true, y_pred):
     plt.show()
 
 def forecast_single_ticker(model, df, forecast_horizon=10):
-    df = prepare_data(df)
-    log_returns, historical_volatility = calculate_log_returns(df)
+    #df = prepare_data(df)
+    log_returns, historical_volatility = calculate_log_returns_alt(df)
     garch_features, _, _ = prepare_garch_features(log_returns.dropna())
     
     all_features = pd.concat([historical_volatility, garch_features], axis=1).dropna()
@@ -126,6 +125,7 @@ def forecast_single_ticker(model, df, forecast_horizon=10):
     
     forecast_dates = pd.date_range(start=all_features.index[-forecast_horizon], periods=forecast_horizon)
     forecast_df = pd.DataFrame({'Forecasted_Volatility': forecasts}, index=forecast_dates)
+    print(f"forecast_dates: {forecast_dates}")
     
     return forecast_df
 
@@ -148,61 +148,109 @@ def forecast_volatility(model, df, forecast_horizon=10):
         traceback.print_exc()
         return None
 
-def main():
-    df = pd.read_csv('scraped_yahoo_finance_data_minimal.csv')
-    df = prepare_data(df)
-    log_returns, historical_volatility = calculate_log_returns(df)
+import pathlib
+
+def DoTheThing(df):
+    log_returns, historical_volatility = calculate_log_returns_alt(df['Adj Close'])
     
-    garch_features, _, _ = prepare_garch_features(log_returns.dropna())
+    garch_features, best_model, best_model_name = prepare_garch_features(log_returns.dropna())
+    print(f"best_model_name: {best_model_name}")
     
     all_features = pd.concat([historical_volatility, garch_features], axis=1).dropna()
     all_features.columns = ['HV'] + list(garch_features.columns)
     
     features, targets = prepare_features(log_returns, all_features)
+    return features, targets
+
+
+def LoadFiles():
+    cwd = pathlib.Path.cwd()
+    inputfolder = cwd / "inputs"
+    inputfiles = inputfolder.glob("input*.csv")
+    # input data must come from 'scraped_yahoo_finance_dataR.csv'; with the headers 
+    # (Ticker, Date, Open, High, Low, Close, Adj Close, Volume)
     
-    print(f"Features shape: {features.shape}")
-    print(f"Targets shape: {targets.shape}")
+    loaded_stuff = []
     
-    input_size = features.shape[1]
+    for inputfile in inputfiles:
+        df = pd.read_csv(inputfile)
+        #df = prepare_data(df)  # don't do this
+        log_returns, historical_volatility = calculate_log_returns_alt(df['Adj Close'])
+        
+        garch_features, best_model, best_model_name = prepare_garch_features(log_returns.dropna())
+        print(f"best_model_name: {best_model_name}")
+        
+        all_features = pd.concat([historical_volatility, garch_features], axis=1).dropna()
+        all_features.columns = ['HV'] + list(garch_features.columns)
+        
+        features, targets = prepare_features(log_returns, all_features)
+        
+        print(f"Features shape: {features.shape}")
+        print(f"Targets shape: {targets.shape}")
+        loaded_stuff.append((df, features, targets))
+    
+    return loaded_stuff
+
+
+def main():
+    loadedStuff = LoadFiles()
+    # for combining input data, the features and targets need to be interleaved
+    splitStuff = []
+    for (df, features, targets) in loadedStuff:
+       X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.20, random_state=42)
+       splitStuff.append((features, X_train, X_test, y_train, y_test))
+
+    features, X_train, X_test, y_train, y_test = splitStuff[0] 
+    features2, X_train2, X_test2, y_train2, y_test2 = splitStuff[1]
+    
+    features_combined = np.concatenate((features, features2), axis=0)
+    X_train_combined  = np.concatenate((X_train , X_train2 ), axis=0)
+    X_test_combined   = np.concatenate((X_test  , X_test2  ), axis=0)
+    y_train_combined  = np.concatenate((y_train , y_train2 ), axis=0)
+    y_test_combined   = np.concatenate((y_test  , y_test2  ), axis=0)
+    
+    input_size = features_combined.shape[1]
     hidden_sizes = [64, 32, 16]
     output_size = 1
     
     model = DFFNN(input_size, hidden_sizes, output_size)
-    trained_model, X_test, y_test = train_dffnn(features, targets, model)
+    trained_model = train_dffnn(X_train_combined, y_train_combined, model)
     
-    predictions = evaluate_model(trained_model, X_test, y_test)
+    predictions = evaluate_model(trained_model, X_test_combined, y_test_combined)
     
-    plot_results(y_test, predictions.flatten())
+    plot_results(y_test_combined, predictions.flatten())
 
-    forecasts = forecast_volatility(trained_model, df, forecast_horizon=10)
-    if forecasts is not None:
-        if isinstance(forecasts, dict):
-            for ticker, forecast_df in forecasts.items():
-                print(f"10-day Volatility Forecast for {ticker}:")
-                print(forecast_df)
+    for (df, _, _) in loadedStuff:
+        # should we combine the input dataframes for this step??
+        forecasts = forecast_volatility(trained_model, df, forecast_horizon=10)
+        if forecasts is not None:
+            if isinstance(forecasts, dict):
+                for ticker, forecast_df in forecasts.items():
+                    print(f"10-day Volatility Forecast for {ticker}:")
+                    print(forecast_df)
+                    
+                    plt.figure(figsize=(12, 6))
+                    plt.plot(forecast_df.index, forecast_df['Forecasted_Volatility'], marker='o')
+                    plt.title(f'10-day Volatility Forecast for {ticker}')
+                    plt.xlabel('Date')
+                    plt.ylabel('Forecasted Volatility')
+                    plt.xticks(rotation=45)
+                    plt.tight_layout()
+                    plt.show()
+            else:
+                print("10-day Volatility Forecast:")
+                print(forecasts)
                 
                 plt.figure(figsize=(12, 6))
-                plt.plot(forecast_df.index, forecast_df['Forecasted_Volatility'], marker='o')
-                plt.title(f'10-day Volatility Forecast for {ticker}')
+                plt.plot(forecasts.index, forecasts['Forecasted_Volatility'], marker='o')
+                plt.title('10-day Volatility Forecast')
                 plt.xlabel('Date')
                 plt.ylabel('Forecasted Volatility')
                 plt.xticks(rotation=45)
                 plt.tight_layout()
                 plt.show()
         else:
-            print("10-day Volatility Forecast:")
-            print(forecasts)
-            
-            plt.figure(figsize=(12, 6))
-            plt.plot(forecasts.index, forecasts['Forecasted_Volatility'], marker='o')
-            plt.title('10-day Volatility Forecast')
-            plt.xlabel('Date')
-            plt.ylabel('Forecasted Volatility')
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.show()
-    else:
-        print("Forecasting failed. Please check your data and model.")
+            print("Forecasting failed. Please check your data and model.")
 
 if __name__ == "__main__":
     main()
