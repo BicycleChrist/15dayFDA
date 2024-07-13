@@ -26,7 +26,7 @@ def _to_unmasked_float_array(x):
 # concerned about overestimating risk, the GJR-GARCH model might be appropriate. 
 # one would think that EGARCH is a preferred model for forecasting during periods of heightned vol (I.E. leading up to or following a clincial event)  
 # as it can differentiate between the impact of positive and negative shocks on volatility (leverage effect)
-# TODO: Give the FIGARCH a shot, implement some degree of forecasting 
+# TODO: implement some degree of forecastin, properly backtest it 
 
 
 def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns):
@@ -77,7 +77,7 @@ def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns):
 
 
 # size of the nodes during the animation represent conditonal volatility of the individual stocks at the given point in the time series
-def animate_correlation_network(dcc_garch_model, log_returns, threshold=0.4, save_path='Volanalysisresults/animated_cor_network.mp4', frame_interval=1):
+def animate_correlation_network(dcc_garch_model, log_returns, threshold=0.25, save_path='Volanalysisresults/animated_cor_network.mp4', frame_interval=1):
     dynamic_correlation_result = GetDynamicCorrelation(dcc_garch_model)
     dynamic_correlation = dynamic_correlation_result[0]
 
@@ -180,24 +180,29 @@ def GarchEverything(df: pd.DataFrame):
     return
 
 
-
-# FIGARCH model has to be constructed directly as guy who wrote the package instructed 
-# https://github.com/bashtage/arch/issues/735
+"""
+ FIGARCH model has to be constructed directly as guy who wrote the package instructed 
+ https://github.com/bashtage/arch/issues/735
+"""
+#TODO: Implement mean ["Zero", "LS", "HAR", "Constant"] & dist ["normal", "t", "skewt", "ged"] for each model being fit
 
 def fit_univariate_garch_models(df, ticker):
     ticker_data = df[ticker].dropna() * 100
     #figarch_model = ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=1000))
     #figarch_res = figarch_model.fit()
-    aparch_model = LS(ticker_data, volatility=APARCH(p=1,q=1,o=1,delta=1.3))
+    
+    
     #aparch_res = aparch_model.fit()
     #print(aparch_res.summary())
     #print(figarch_res.summary())
-    models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1),
-              'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1),
-              'GJR-GARCH(1,1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1),
-              'T-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, power=1),
+    models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, dist="studentst", mean="Constant"),
+              'GARCH(2,2)': arch_model(ticker_data, vol='GARCH', p=2, q=2, dist="studentst", mean="Zero"),
+              'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1, dist="skewstudent", mean="Constant"),
+              'GJR-GARCH(1,1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, mean="Constant"),
+              'T-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, power=1, mean="Constant", dist="studentst"),
               'FIGARCH(1,1,2,d)': ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=2000)),
-              'APARCH:(1,1,1,d)':ConstantMean(ticker_data, volatility=APARCH(p=1,q=1,o=1,delta=0.7))
+              'APARCH:(1,1,1,d)':ConstantMean(ticker_data, volatility=APARCH(p=1,q=1,o=1,delta=0.7)),
+              #'MIDAShyperbolic(m,asym)':ConstantMean(ticker_data, volatility=MIDASHyperbolic(m=5, asym=True))
               }
 
     results = {}
@@ -209,15 +214,15 @@ def fit_univariate_garch_models(df, ticker):
 
         results[model_name] = {'model': model_fitted, 'AIC': aic, 'BIC': bic}
 
-        # compute realized volatility using a 30-day rolling window
+        # compute Historical volatility using a 30-day rolling window
         #realized_volatility = np.sqrt(df.rolling(window=30).apply(lambda x: (x**2).sum()))
         #realized_vol_ewma = ticker_data.ewm(span=30).std()
         #realized_volatility = realized_vol_ewma
-        realized_volatility = ticker_data.rolling(window=30).std()
+        historical_volatility = ticker_data.rolling(window=30).std()
 
-        # generate/save conditional vs realized volatility plot
+        # generate/save conditional vs Historical volatility plot
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(realized_volatility, label='Realized Volatility', alpha=0.7, color='blue')
+        ax.plot(historical_volatility, label='Historical Volatility', alpha=0.7, color='blue')
         ax.plot(model_fitted.conditional_volatility, label='Conditional Volatility', alpha=0.7, color="red")
         ax.set_title(f'{ticker} - {model_name}')
         ax.set_xlabel('Date')
