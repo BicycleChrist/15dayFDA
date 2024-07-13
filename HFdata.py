@@ -13,12 +13,12 @@ def fetch_data():
     data = response.json()
     
     if data and 'results' in data:
-        df = pd.DataFrame(data['results'])
-        df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
-        df.set_index('timestamp', inplace=True)
-        df.drop(columns=['t'], inplace=True)
-        df.columns = ['volume', 'vwap', 'open', 'close', 'high', 'low', 'number_of_trades']
-        print(df)
+        df_midas = pd.DataFrame(data['results'])
+        df_midas['timestamp'] = pd.to_datetime(df_midas['t'], unit='ms')
+        df_midas.set_index('timestamp', inplace=True)
+        df_midas.drop(columns=['t'], inplace=True)
+        df_midas.columns = ['volume', 'vwap', 'open', 'close', 'high', 'low', 'number_of_trades']
+        print(df_midas)
     else:
         print(f"Error fetching data: {data}")
         return None
@@ -34,17 +34,17 @@ def fetch_data():
             new_data.set_index('timestamp', inplace=True)
             new_data.drop(columns=['t'], inplace=True)
             new_data.columns = ['volume', 'vwap', 'open', 'close', 'high', 'low', 'number_of_trades']
-            df = pd.concat([df, new_data])
+            df_midas = pd.concat([df_midas, new_data])
         else:
             print(f"Error fetching additional data: {data}")
     
-    return df
+    return df_midas
 
 if __name__ == "__main__":
-    df = fetch_data()
-    if df is not None:
-        df.to_csv('hf_data.csv', index=True)
-        print(df)
+    df_midas = fetch_data()
+    if df_midas is not None:
+        df_midas.to_csv('hf_data.csv', index=True)
+        print(df_midas)
     else:
         print("Failed to fetch data.")
 

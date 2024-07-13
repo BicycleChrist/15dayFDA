@@ -12,6 +12,8 @@ from upcomingevents import Main  # Import the Main function
 
 indx_tickers = ['XBI', 'SPY']
 
+
+
 # date to Unix timestamp 
 def date_to_unix_timestamp(year, month, day):
     return int(datetime(year, month, day).timestamp())
@@ -57,7 +59,7 @@ def read_tickers_from_file(file_path):
     with open(file_path, 'r') as file:
         return [line.strip() for line in file if line.strip()]
 
-def process_and_scrape(use_events=True, use_file=False, file_path=None):
+def process_and_scrape(use_events=False, use_file=True, file_path=None):
     all_tickers = indx_tickers.copy()
 
     if use_events:
@@ -75,8 +77,8 @@ def process_and_scrape(use_events=True, use_file=False, file_path=None):
     # Remove duplicates
     all_tickers = list(dict.fromkeys(all_tickers))
 
-    start_date = (2020, 6, 20)
-    end_date = (2024, 6, 20)
+    start_date = (2022, 7, 1)
+    end_date = (2024, 6, 30)
 
     all_data = []
 

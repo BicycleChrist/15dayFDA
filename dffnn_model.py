@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 # Interpolate the loss values to create a surface
 from scipy.interpolate import griddata
 import os
-
+import pathlib
+from pprint import pprint
 
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -17,7 +18,8 @@ from sklearn.decomposition import PCA
 
 # Import necessary functions from dffnn_input.py
 from dffnn_input import prepare_data, calculate_log_returns_alt, prepare_garch_features
-os.environ['HSA_OVERRIDE_GFX_VERSION'] = '10.3.0'
+# export these in the venv activate script instead
+#os.environ['HSA_OVERRIDE_GFX_VERSION'] = '10.3.0' # needed for use of AMD GPU in training
 #os.environ['HIP_VISIBLE_DEVICES'] = '0'
 #os.environ['ROCR_VISIBLE_DEVICES'] = '0'
 
@@ -28,6 +30,12 @@ os.environ['HSA_OVERRIDE_GFX_VERSION'] = '10.3.0'
 
 # Plz use GPU
 device = torch.device("cuda" if torch.backends else "cpu")
+
+def PrintTorchConfig():
+    pprint(torch.__config__.show())
+    pprint(torch.__config__.parallel_info())
+    pprint(torch.__config__._cxx_flags())
+
 
 class DFFNN(nn.Module):
     def __init__(self, input_size, hidden_sizes, output_size):
@@ -49,8 +57,8 @@ class DFFNN(nn.Module):
 
         # Activation function
         self.activation = nn.LeakyReLU(0.01)
+        # self.activation = nn.Tanh()
         
-        #self.activation = nn.Tanh()
     def forward(self, x):
         for layer, ln in zip(self.hidden_layers, self.ln_layers):
             x = self.activation(ln(layer(x)))
@@ -78,7 +86,7 @@ def prepare_forecast_features(all_features, lookback=10):
     return feature.reshape(1, -1)
 
 
-def visualize_gradient_descent(model, X_train, y_train, epochs=10, batch_size=42, learning_rate=0.002):
+def visualize_gradient_descent(model, X_train, y_train, epochs=10, batch_size=8, learning_rate=0.01):
     criterion = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
@@ -87,7 +95,7 @@ def visualize_gradient_descent(model, X_train, y_train, epochs=10, batch_size=42
     losses = []
     
     train_dataset = torch.utils.data.TensorDataset(torch.FloatTensor(X_train), torch.FloatTensor(y_train))
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     
     for epoch in range(epochs):
         for batch_X, batch_y in train_loader:
@@ -159,7 +167,7 @@ def train_dffnn(X_train, y_train, model, epochs=10, learning_rate=0.002):
     y_train = y_train.to(device)
 
     train_dataset = TensorDataset(X_train, y_train)
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=False)  # Added batch_size
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)  # Added batch_size
 
     criterion = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -195,6 +203,7 @@ def evaluate_model(model, X_test, y_test):
     X_test = X_test.to(device)
     y_test = y_test.to(device)
     
+    # TODO: is there an unnecessary conversion step here?
     with torch.no_grad():
         predictions = model(X_test).cpu().numpy()
     
@@ -265,7 +274,6 @@ def forecast_volatility(model, df, forecast_horizon=10):
         print(f"An error occurred during forecasting: {str(e)}")
         return None
 
-import pathlib
 
 def DoTheThing(df):
     log_returns, historical_volatility = calculate_log_returns_alt(df['Adj Close'])
@@ -309,7 +317,7 @@ def LoadFiles():
     return loaded_stuff
 
 
-def backtest_model(model, features, targets, window_size=30):
+def backtest_model(model, features, targets, window_size=10):
     predictions = []
     actual_values = []
     
@@ -328,11 +336,11 @@ def backtest_model(model, features, targets, window_size=30):
         train_targets = targets[i:i+window_size]
         
         # Retrain the model on this window
-        model = train_dffnn(train_features, train_targets, model, epochs=10)
+        #model = train_dffnn(train_features, train_targets, model, epochs=10)
         
         # Make a prediction for the next day
-        with torch.no_grad():
-            next_day_prediction = model(features[i+window_size].unsqueeze(0)).item()
+        #with torch.no_grad():
+        next_day_prediction = model(features[i+window_size].unsqueeze(0)).item()
         
         predictions.append(next_day_prediction)
         actual_values.append(targets[i+window_size].item())
@@ -356,7 +364,7 @@ def main():
     for idx, (df, features, targets) in enumerate(loadedStuff):
         print(f"Processing dataset {idx + 1}")
         
-        X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.20, shuffle=False)
+        X_train, X_test, y_train, y_test = train_test_split(features, targets, test_size=0.20, shuffle=True)
         
         # Convert to PyTorch tensors and move to GPU
         X_train = torch.FloatTensor(X_train).to(device)
@@ -372,57 +380,55 @@ def main():
         model = model.to(device)
         
         trained_model = train_dffnn(X_train, y_train, model)
-        torch.save(trained_model.state_dict(), "trained_model.pth")
-        
-        predictions = evaluate_model(trained_model, X_test, y_test)
-        
-        plot_results(y_test.cpu().numpy(), predictions.flatten())
-        
+        # torch.save(trained_model.state_dict(), "trained_model.pth")
+        # 
+        # predictions = evaluate_model(trained_model, X_test, y_test)
+        # # 
+        # plot_results(y_test.cpu().numpy(), predictions.flatten())
+
         #  backtesting
         backtest_predictions, backtest_actual = backtest_model(trained_model, features, targets)
-        
-        # plot backtesting results
+        # 
+        # # plot backtesting results
         ticker = df['Ticker'].iloc[0] if 'Ticker' in df.columns else f"Dataset {idx + 1}"
         plot_backtest_results(backtest_predictions, backtest_actual, ticker)
-        
+        # 
         # forecast volatility with DFFNN
-        forecasts = forecast_volatility(trained_model, df, forecast_horizon=10)
-        if forecasts is not None:
-            if isinstance(forecasts, dict):
-                for ticker, forecast_df in forecasts.items():
-                    print(f"10-day Volatility Forecast for {ticker}:")
-                    print(forecast_df)
-                    
-                    plt.figure(figsize=(32, 16))
-                    plt.plot(forecast_df.index, forecast_df['Forecasted_Volatility'], marker='o')
-                    plt.title(f'10-day Volatility Forecast for {ticker}')
-                    plt.xlabel('Date')
-                    plt.ylabel('Forecasted Volatility')
-                    plt.xticks(rotation=45)
-                    #plt.tight_layout()
-                    plt.show(block=False)
-            else:
-                print("10-day Volatility Forecast:")
-                print(forecasts)
-                
-                plt.figure(figsize=(32, 16))
-                plt.plot(forecasts.index, forecasts['Forecasted_Volatility'], marker='o')
-                plt.title('10-day Volatility Forecast')
-                plt.xlabel('Date')
-                plt.ylabel('Forecasted Volatility')
-                plt.xticks(rotation=45)
-                #plt.tight_layout()
-                plt.show(block=False)
-        else:
-            print("Forecasting failed. Please check your data and model.")
+        # forecasts = forecast_volatility(trained_model, df, forecast_horizon=10)
+        # if forecasts is not None:
+        #     if isinstance(forecasts, dict):
+        #         for ticker, forecast_df in forecasts.items():
+        #             print(f"10-day Volatility Forecast for {ticker}:")
+        #             print(forecast_df)
+        #             
+        #             plt.figure(figsize=(32, 16))
+        #             plt.plot(forecast_df.index, forecast_df['Forecasted_Volatility'], marker='o')
+        #             plt.title(f'10-day Volatility Forecast for {ticker}')
+        #             plt.xlabel('Date')
+        #             plt.ylabel('Forecasted Volatility')
+        #             plt.xticks(rotation=45)
+        #             #plt.tight_layout()
+        #             plt.show(block=False)
+        #     else:
+        #         print("10-day Volatility Forecast:")
+        #         print(forecasts)
+        #         
+        #         plt.figure(figsize=(32, 16))
+        #         plt.plot(forecasts.index, forecasts['Forecasted_Volatility'], marker='o')
+        #         plt.title('10-day Volatility Forecast')
+        #         plt.xlabel('Date')
+        #         plt.ylabel('Forecasted Volatility')
+        #         plt.xticks(rotation=45)
+        #         #plt.tight_layout()
+        #         plt.show(block=False)
+        # else:
+        #     print("Forecasting failed. Please check your data and model.")
 
-from pprint import pprint
 
 if __name__ == "__main__":
     plt.ion()
-    #pprint(torch.__config__.show())
-    #pprint(torch.__config__.parallel_info())
-    #pprint(torch.__config__._cxx_flags())
+    PrintTorchConfig()
+    print("\n\n")
     main()
     plt.show(block=True) #blocking
 

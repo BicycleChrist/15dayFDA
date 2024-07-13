@@ -1,10 +1,12 @@
+requests
 numpy
 pandas
 arch
 mvgarch
-numpy == 1.26.1
+numpy
 matplotlib
 selenium
 beautifulsoup4
 networkx
-torch
+# torch
+scikit-learn

@@ -1,18 +1,20 @@
+import os
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from arch import arch_model
 from arch.univariate import ZeroMean, ConstantMean, ARX, HARX, Normal, StudentsT, SkewStudent
 from arch.univariate.volatility import MIDASHyperbolic
 
 def prepare_data(file_path):
-    # Load the data
+    
     df = pd.read_csv(file_path, parse_dates=['timestamp'])
     df = df.set_index('timestamp')
     
     # Resample to regular intervals if necessary
     df = df.resample('1T').last().ffill()
     
-    # Calculate log returns
+    
     returns = np.log(df['close'] / df['close'].shift(1)).dropna()
     
     return returns
@@ -47,19 +49,49 @@ def fit_midas_models(returns, m=4):
     
     return results
 
+def plot_conditional_volatility(results, save_dir):
+    plt.figure(figsize=(14, 8))
+    
+    for name, result in results.items():
+        cond_vol = result.conditional_volatility
+        plt.plot(cond_vol, label=name)
+    
+    plt.title('Conditional Volatility Over Time')
+    plt.xlabel('Time')
+    plt.ylabel('Conditional Volatility')
+    plt.legend(loc='upper right')
+    
+    plt.savefig(os.path.join(save_dir, 'conditional_volatility.png'))
+    plt.close()
 
-if __name__ == "__main__":
-    
-    file_path = 'hf_data.csv'  # Replace with your actual file path
-    returns = prepare_data(file_path)
-    results = fit_midas_models(returns)
-    
-    # AIC vs BIC
+def plot_aic_bic_comparison(results, save_dir):
     comparison = pd.DataFrame({
         'AIC': {name: result.aic for name, result in results.items()},
         'BIC': {name: result.bic for name, result in results.items()}
     })
-    print("MIDAS Model Comparison per mean model/distribution (sorted by AIC):")
-    print(comparison.sort_values('AIC'))
+
+    comparison.sort_values('AIC').plot(kind='bar', figsize=(14, 8))
+    plt.title('Model Comparison (AIC and BIC)')
+    plt.ylabel('Information Criterion Value')
+    
+    plt.savefig(os.path.join(save_dir, 'aic_bic_comparison.png'))
+    plt.close()
+
+
+
+if __name__ == "__main__":
+    file_path = 'hf_data.csv' 
+    save_dir = 'midas_results'
+    
+    
+    os.makedirs(save_dir, exist_ok=True)
+    
+    returns = prepare_data(file_path)
+    results = fit_midas_models(returns)
+    
+    # Plotting results
+    plot_conditional_volatility(results, save_dir)
+    plot_aic_bic_comparison(results, save_dir)
+
 
     
