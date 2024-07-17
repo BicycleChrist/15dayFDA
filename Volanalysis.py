@@ -10,6 +10,8 @@ import matplotlib.dates as mdates
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import plotly.graph_objects as go
+import os
 
 def _to_unmasked_float_array(x):
     """
@@ -29,50 +31,79 @@ def _to_unmasked_float_array(x):
 # TODO: implement some degree of forecastin, properly backtest it 
 
 
-def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns):
+def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns, interactive=True):
     cond_vols = dcc_garch_model.cond_vols
-
-    fig = plt.figure(figsize=(20, 20))
-    ax = fig.add_subplot(111, projection='3d')
-
     num_assets = cond_vols.shape[1]
     time_points = log_returns.index
     assets = np.arange(num_assets)
-
     X, Y = np.meshgrid(assets, mdates.date2num(time_points))
     Z = cond_vols
 
-    surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none')
+    if not interactive:
+        # Original matplotlib plot 
+        fig = plt.figure(figsize=(20, 20))
+        ax = fig.add_subplot(111, projection='3d')
+        
+        surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.7)
+        ax.plot_wireframe(X, Y, Z, color='black', alpha=0.1)
+        
+        ax.set_xlabel('Asset Index', labelpad=14)
+        ax.set_ylabel('Date', labelpad=20)
+        ax.set_zlabel('Volatility', labelpad=20)
+        ax.set_title('DCC-GARCH Conditional Volatilities', pad=10)
+        ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        ax.yaxis.set_major_locator(mdates.MonthLocator(interval=6))
+        
+        fig.autofmt_xdate()
+        
+        cbar = fig.colorbar(surf, ax=ax, shrink=0.6, aspect=20, pad=0.1)
+        cbar.set_label('Volatility', rotation=270, labelpad=20)
+        
+        ax.set_xticks(np.arange(num_assets))
+        ax.set_xticklabels(log_returns.columns, rotation=45, ha='right')
+        
+        plt.subplots_adjust(left=0.05, right=0.95, bottom=0.1, top=0.95)
+        ax.view_init(elev=20, azim=30)
+        
+        if not os.path.exists('Volanalysisresults'):
+            os.makedirs('Volanalysisresults', exist_ok=True)
+        plt.savefig(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface.png'), bbox_inches='tight', dpi=300)
+        plt.close()
+        
+        return fig
 
-    ax.set_xlabel('Asset Index', labelpad=14)
-    ax.set_ylabel('Date', labelpad=20)
-    ax.set_zlabel('Volatility', labelpad=20)
-    ax.set_title('DCC-GARCH Conditional Volatilities', pad=10)
+    else:
+        # interactive plotly plot with visible dates
+        date_strings = [d.strftime('%Y-%m-%d') for d in time_points]
+        
+        fig = go.Figure(data=[go.Surface(z=Z, x=X, y=np.arange(len(time_points)), colorscale='Viridis')])
 
+        fig.update_layout(
+            title='DCC-GARCH Conditional Volatilities',
+            autosize=False,
+            width=1000,
+            height=900,
+            scene=dict(
+                xaxis_title='Asset Index',
+                yaxis_title='Date',
+                zaxis_title='Volatility',
+                xaxis=dict(
+                    ticktext=log_returns.columns,
+                    tickvals=list(range(num_assets)),
+                ),
+                yaxis=dict(
+                    ticktext=date_strings[::len(date_strings)//10],  # Show fewer dates to avoid overcrowding
+                    tickvals=list(range(0, len(time_points), len(time_points)//10)),
+                ),
+            )
+        )
 
-    ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    ax.yaxis.set_major_locator(mdates.MonthLocator(interval=6))
+        if not os.path.exists('Volanalysisresults'):
+            os.makedirs('Volanalysisresults', exist_ok=True)
+        fig.write_html(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface_interactive.html'))
 
-    # Rotate and align the tick labels so they look better
-    fig.autofmt_xdate()
+        return fig
 
-    cbar = fig.colorbar(surf, ax=ax, shrink=0.6, aspect=20, pad=0.1)
-    cbar.set_label('Volatility', rotation=270, labelpad=20)
-
-    # tick labels for all assets
-    ax.set_xticks(np.arange(num_assets))
-    ax.set_xticklabels(log_returns.columns, rotation=90, ha='right')
-
-    # subplot parameters
-    plt.subplots_adjust(left=0.05, right=0.95, bottom=0.1, top=0.95)
-
-    # view angle
-    ax.view_init(elev=20, azim=30)
-
-    if not os.path.exists('Volanalysisresults'):
-        os.makedirs('Volanalysisresults', exist_ok=True)
-    plt.savefig(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface.png'), bbox_inches='tight', dpi=300)
-    plt.close()
 
 
 
@@ -196,8 +227,8 @@ def fit_univariate_garch_models(df, ticker):
     #print(aparch_res.summary())
     #print(figarch_res.summary())
     models = {'GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, dist="studentst", mean="Constant"),
-              'GARCH(2,2)': arch_model(ticker_data, vol='GARCH', p=2, q=2, dist="studentst", mean="Zero"),
-              'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1, dist="skewstudent", mean="Constant"),
+              'GARCH(2,2)': arch_model(ticker_data, vol='GARCH', p=2, q=2, dist="studentst", mean="Constant"),
+              'EGARCH(1,1)': arch_model(ticker_data, vol='EGARCH', p=1, q=1, dist="studentst", mean="Constant"),
               'GJR-GARCH(1,1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, mean="Constant"),
               'T-GARCH(1,1)': arch_model(ticker_data, vol='GARCH', p=1, q=1, o=1, power=1, mean="Constant", dist="studentst"),
               'FIGARCH(1,1,2,d)': ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=2000)),
