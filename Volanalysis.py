@@ -28,83 +28,86 @@ def _to_unmasked_float_array(x):
 # concerned about overestimating risk, the GJR-GARCH model might be appropriate. 
 # one would think that EGARCH is a preferred model for forecasting during periods of heightned vol (I.E. leading up to or following a clincial event)  
 # as it can differentiate between the impact of positive and negative shocks on volatility (leverage effect)
-# TODO: implement some degree of forecastin, properly backtest it 
+# TODO: implement some degree of forecasting, properly backtest it 
+# TODO: Rescale data back to original values after parameter estimation 
 
-
-def plot_dcc_garch_3d_surface(dcc_garch_model, log_returns, interactive=True):
+# interactive plotly plot with visible dates
+def plot_dcc_garch_3d_surface_plotly(dcc_garch_model, log_returns):
     cond_vols = dcc_garch_model.cond_vols
     num_assets = cond_vols.shape[1]
     time_points = log_returns.index
     assets = np.arange(num_assets)
     X, Y = np.meshgrid(assets, mdates.date2num(time_points))
     Z = cond_vols
-
-    if not interactive:
-        # Original matplotlib plot 
-        fig = plt.figure(figsize=(20, 20))
-        ax = fig.add_subplot(111, projection='3d')
-        
-        surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.7)
-        ax.plot_wireframe(X, Y, Z, color='black', alpha=0.1)
-        
-        ax.set_xlabel('Asset Index', labelpad=14)
-        ax.set_ylabel('Date', labelpad=20)
-        ax.set_zlabel('Volatility', labelpad=20)
-        ax.set_title('DCC-GARCH Conditional Volatilities', pad=10)
-        ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        ax.yaxis.set_major_locator(mdates.MonthLocator(interval=6))
-        
-        fig.autofmt_xdate()
-        
-        cbar = fig.colorbar(surf, ax=ax, shrink=0.6, aspect=20, pad=0.1)
-        cbar.set_label('Volatility', rotation=270, labelpad=20)
-        
-        ax.set_xticks(np.arange(num_assets))
-        ax.set_xticklabels(log_returns.columns, rotation=45, ha='right')
-        
-        plt.subplots_adjust(left=0.05, right=0.95, bottom=0.1, top=0.95)
-        ax.view_init(elev=20, azim=30)
-        
-        if not os.path.exists('Volanalysisresults'):
-            os.makedirs('Volanalysisresults', exist_ok=True)
-        plt.savefig(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface.png'), bbox_inches='tight', dpi=300)
-        plt.close()
-        
-        return fig
-
-    else:
-        # interactive plotly plot with visible dates
-        date_strings = [d.strftime('%Y-%m-%d') for d in time_points]
-        
-        fig = go.Figure(data=[go.Surface(z=Z, x=X, y=np.arange(len(time_points)), colorscale='Viridis')])
-
-        fig.update_layout(
-            title='DCC-GARCH Conditional Volatilities',
-            autosize=False,
-            width=1000,
-            height=900,
-            scene=dict(
-                xaxis_title='Asset Index',
-                yaxis_title='',
-                zaxis_title='Volatility',
-                xaxis=dict(
-                    ticktext=log_returns.columns,
-                    tickvals=list(range(num_assets)),
-                ),
-                yaxis=dict(
-                    ticktext=date_strings[::len(date_strings)//10],  # Show fewer dates to avoid overcrowding
-                    tickvals=list(range(0, len(time_points), len(time_points)//10)),
-                ),
-            )
+    
+    date_strings = [d.strftime('%Y-%m-%d') for d in time_points]
+    
+    # plotly object, not matplotlib
+    fig = go.FigureWidget(data=[go.Surface(z=Z, x=X, y=time_points, colorscale='Rainbow')])
+    # colorscale presets are:
+    # Blackbody,Bluered,Blues,C ividis,Earth,Electric,Greens,Greys,Hot,Jet,Picnic,Portl and,Rainbow,RdBu,Reds,Viridis,YlGnBu,YlOrRd
+    
+    fig.update_layout(
+        title='DCC-GARCH Conditional Volatilities',
+        # autosize=True,
+        #width=1920,
+        #height=1080,
+        scene=dict(
+            xaxis_title='Asset Index',
+            yaxis_title='',
+            zaxis_title='Volatility',
+            xaxis=dict(
+                ticktext=log_returns.columns,
+                tickvals=assets,
+            ),
+            #yaxis=dict(
+            #    ticktext=date_strings[::len(date_strings)//10],  # Show fewer dates to avoid overcrowding
+            #    tickvals=list(range(0, len(time_points), len(time_points)//10)),
+            #),
         )
+    )
+    
+    fig.show()
+    fig.write_html(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface_interactive.html'))
+    return fig
 
-        if not os.path.exists('Volanalysisresults'):
-            os.makedirs('Volanalysisresults', exist_ok=True)
-        fig.write_html(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface_interactive.html'))
-
-        return fig
-
-
+# Original matplotlib plot
+def plot_dcc_garch_3d_surface_matplotlib(dcc_garch_model, log_returns, isInteractive=False):
+    cond_vols = dcc_garch_model.cond_vols
+    num_assets = cond_vols.shape[1]
+    time_points = log_returns.index
+    assets = np.arange(num_assets)
+    X, Y = np.meshgrid(assets, mdates.date2num(time_points))
+    Z = cond_vols
+    
+    if isInteractive: plt.ioff() # this is somehow inverted???????
+    fig = plt.figure("3D_DCC_GARCH", figsize=(20,20))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.7)
+    ax.plot_wireframe(X, Y, Z, color='black', alpha=0.1)
+    
+    ax.set_xlabel('Asset Index', labelpad=14)
+    ax.set_ylabel('Date', labelpad=20)
+    ax.set_zlabel('Volatility', labelpad=20)
+    ax.set_title('DCC-GARCH Conditional Volatilities', pad=10)
+    ax.yaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    ax.yaxis.set_major_locator(mdates.MonthLocator(interval=6))
+    
+    fig.autofmt_xdate()
+    
+    cbar = fig.colorbar(surf, ax=ax, shrink=0.6, aspect=20, pad=0.1)
+    cbar.set_label('Volatility', rotation=270, labelpad=20)
+    
+    ax.set_xticks(np.arange(num_assets))
+    ax.set_xticklabels(log_returns.columns, rotation=45, ha='right')
+    
+    plt.subplots_adjust(left=0.05, right=0.95, bottom=0.1, top=0.95)
+    ax.view_init(elev=20, azim=30)
+    
+    if isInteractive: plt.show()
+    plt.savefig(os.path.join('Volanalysisresults', 'dcc_garch_3d_surface.png'), bbox_inches='tight', dpi=300)
+    return fig
 
 
 # size of the nodes during the animation represent conditonal volatility of the individual stocks at the given point in the time series
@@ -167,7 +170,8 @@ def prepare_data(df):
     return df
 
 def calculate_log_returns(df):
-    log_returns = np.log(df / df.shift(1)).dropna()
+    df = df.astype("float")
+    log_returns = np.log(df / df.shift(1)).dropna()*100
     historical_volatility = log_returns.rolling(window=30).std() * np.sqrt(252)
     return log_returns, historical_volatility
 
@@ -218,7 +222,7 @@ def GarchEverything(df: pd.DataFrame):
 #TODO: Implement mean ["Zero", "LS", "HAR", "Constant"] & dist ["normal", "t", "skewt", "ged"] for each model being fit
 
 def fit_univariate_garch_models(df, ticker):
-    ticker_data = df[ticker].dropna() * 100
+    ticker_data = df[ticker].dropna() 
     #figarch_model = ConstantMean(ticker_data, volatility=FIGARCH(p=1,q=1,power=2,truncation=1000))
     #figarch_res = figarch_model.fit()
     
@@ -310,34 +314,37 @@ def GetDynamicCorrelation(dcc_garch_model):
     return dynamic_correlation_results
 
 
-def plot_conditional_volatilities(dcc_garch_model, log_returns):
-    cond_vols = dcc_garch_model.cond_vols
-    
-    plt.figure(figsize=(12, 96))
-    for i, ticker in enumerate(log_returns.columns):
-        plt.plot(log_returns.index, cond_vols[:, i], label=ticker, alpha=0.25)
-    
+def plot_conditional_volatilities(dcc_garch_model, log_returns, isInteractive=False):
+    if isInteractive: plt.ioff() # this is somehow inverted???????
+    plt.figure("ConditionalVolGraph", figsize=(96, 12))
     plt.title('Conditional Volatilities from DCC-GARCH')
     plt.xlabel('Date')
     plt.ylabel('Conditional Volatility')
-    plt.legend()
     plt.grid(True)
     
-    if not os.path.exists('Volanalysisresults'):
-        os.makedirs('Volanalysisresults', exist_ok=True)
+    cond_vols = dcc_garch_model.cond_vols
+    for i, ticker in enumerate(log_returns.columns):
+        plt.plot(log_returns.index, cond_vols[:, i], label=ticker)
+    
+    if isInteractive: plt.legend().set_draggable(True)
+    #plt.interactive(isInteractive)
+    
+    if isInteractive: plt.show(block=True)
+    # for some reason saving the plot only works when interactive-mode is off
     plt.savefig(os.path.join('dcc_garch_output', 'dcc_garch_conditional_volatilities.png'))
     plt.close()
+    return
 
-
-import arch.data.core_cpi
+#import arch.data.core_cpi
 # https://arch.readthedocs.io/en/latest/univariate/introduction.html#arch.univariate.arch_model
 
 
 
 def main():
+    os.makedirs('Volanalysisresults', exist_ok=True)
     df = pd.read_csv('scraped_yahoo_finance_data.csv')
     df = prepare_data(df)
-    log_returns, historical_volatility  = calculate_log_returns(df)
+    log_returns, historical_volatility = calculate_log_returns(df)
     tickers = df.columns
     
     for ticker in tickers:
@@ -354,9 +361,10 @@ def main():
         dynamic_correlation = GetDynamicCorrelation(dcc_garch)
         print("\ndynamic correlation: \n")
         print(dynamic_correlation)
-        plot_dcc_garch_3d_surface(dcc_garch, log_returns)
-        plot_conditional_volatilities(dcc_garch, log_returns)
-        animate_correlation_network(dcc_garch, log_returns, threshold=0.25)
+        plot_dcc_garch_3d_surface_matplotlib(dcc_garch, log_returns, isInteractive=True)
+        plot_dcc_garch_3d_surface_plotly(dcc_garch, log_returns)
+        plot_conditional_volatilities(dcc_garch, log_returns, isInteractive=True)
+        #animate_correlation_network(dcc_garch, log_returns, threshold=0.25)
 
 
 if __name__ == "__main__":

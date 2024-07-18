@@ -12,8 +12,6 @@ from upcomingevents import Main  # Import the Main function
 
 indx_tickers = ['XBI', 'SPY']
 
-
-
 # date to Unix timestamp 
 def date_to_unix_timestamp(year, month, day):
     return int(datetime(year, month, day).timestamp())
@@ -59,25 +57,26 @@ def read_tickers_from_file(file_path):
     with open(file_path, 'r') as file:
         return [line.strip() for line in file if line.strip()]
 
-def process_and_scrape(use_events=False, use_file=True, file_path=None):
-    all_tickers = indx_tickers.copy()
 
+def process_and_scrape(use_events=False, file_path=None):
+    print(f"process_and_scrape: use_events={use_events}, file_path={file_path}\n")
+    all_tickers = indx_tickers.copy()
+    
     if use_events:
         df_events = Main()
         event_tickers = df_events['Company'].unique()
         event_tickers = [ticker for ticker in event_tickers if ticker != "MeetingN/A"]
         all_tickers.extend(event_tickers)
-
-    if use_file:
-        if file_path is None:
-            raise ValueError("File path must be provided when use_file is True")
+    
+    if file_path is not None:
         file_tickers = read_tickers_from_file(file_path)
         all_tickers.extend(file_tickers)
-
+    
     # Remove duplicates
     all_tickers = list(dict.fromkeys(all_tickers))
+    print(f"All Tickers: {all_tickers}")
 
-    start_date = (2022, 7, 1)
+    start_date = (2020, 7, 1)
     end_date = (2024, 6, 30)
 
     all_data = []
@@ -100,5 +99,7 @@ def process_and_scrape(use_events=False, use_file=True, file_path=None):
     df_all_data.to_csv('scraped_yahoo_finance_data.csv', index=False)
     print('Scraped data has been saved to scraped_yahoo_finance_data.csv')
 
+
 if __name__ == "__main__":
-    process_and_scrape(use_events=False, use_file=True, file_path='tickerslist.txt')
+    process_and_scrape(True, file_path="tickerslist.txt")
+    #process_and_scrape(file_path="tickerslist.txt")
