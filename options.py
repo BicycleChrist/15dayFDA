@@ -34,32 +34,36 @@ def get_options_data(ticker):
 def save_to_csv(data, filename):
     data.to_csv(filename, index=False)
 
-def plot_vol_surface(data, x_column, y_column, z_column, title, option_type):
+def plot_vol_surface(data, title, current_price, z_scale=1.0, min_days_to_expiry=7, strike_range=0.30):
+    # Filter data based on minimum days to expiry and strike range
+    min_strike = current_price * (1 - strike_range)
+    max_strike = current_price * (1 + strike_range)
+    filtered_data = data[(data['DaysToExpiry'] >= min_days_to_expiry) & 
+                         (data['strike'] >= min_strike) & 
+                         (data['strike'] <= max_strike)]
+    
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
     
-    x = data[x_column]
-    y = data[y_column]
-    z = data[z_column]
+    x = filtered_data['strike']
+    y = filtered_data['DaysToExpiry']
+    z = filtered_data['impliedVolatility'] * z_scale
     
-    # Create a grid for interpolation
+    # gridski
     xi = np.linspace(x.min(), x.max(), 100)
     yi = np.linspace(y.min(), y.max(), 100)
     X, Y = np.meshgrid(xi, yi)
     
-    # Interpolate Z values on the grid
+    # interpolate Z values so we can have cool surface
     Z = griddata((x, y), z, (X, Y), method='cubic')
     
-    # Plot the surface
-    surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.8)
+    # Plot surface
+    surf = ax.plot_surface(X, Y, Z, cmap='rainbow', edgecolor='none', alpha=0.8)
     
-    ax.set_xlabel(x_column)
-    ax.set_ylabel(y_column)
+    ax.set_xlabel('Strike')
+    ax.set_ylabel('Days to Expiration')
     ax.set_zlabel('Implied Volatility')
-    ax.set_title(f'{title} - {option_type.capitalize()}')
-    
-    # Adjust view angle for better visualization
-    ax.view_init(elev=20, azim=45)
+    ax.set_title(f"{title}\n(Min {min_days_to_expiry} days to expiry, Strike range: {strike_range*100}%)")
     
     # Add a color bar
     fig.colorbar(surf, ax=ax, label='Implied Volatility', pad=0.1)
@@ -67,21 +71,29 @@ def plot_vol_surface(data, x_column, y_column, z_column, title, option_type):
     plt.tight_layout()
     plt.show()
 
-# Example usage
-ticker = "AAPL"  # You can change this to any ticker you're interested in
-calls, puts, current_price = get_options_data(ticker)
-
-# Save CSV files
-save_to_csv(calls, f"{ticker}_calls_{datetime.now().strftime('%Y-%m-%d')}.csv")
-save_to_csv(puts, f"{ticker}_puts_{datetime.now().strftime('%Y-%m-%d')}.csv")
-print(f"CSV files saved for {ticker} calls and puts.")
-
-# Plot using Days to Expiry
-plot_vol_surface(calls, 'strike', 'DaysToExpiry', 'impliedVolatility', f'{ticker} Volatility Surface (Days to Expiry)', 'calls')
-plot_vol_surface(puts, 'strike', 'DaysToExpiry', 'impliedVolatility', f'{ticker} Volatility Surface (Days to Expiry)', 'puts')
-
-# Plot using Moneyness
-plot_vol_surface(calls, 'strike', 'Moneyness', 'impliedVolatility', f'{ticker} Volatility Surface (Moneyness)', 'calls')
-plot_vol_surface(puts, 'strike', 'Moneyness', 'impliedVolatility', f'{ticker} Volatility Surface (Moneyness)', 'puts')
-
-print(f"Current price of {ticker}: ${current_price:.2f}")
+if __name__ == "__main__":
+    ticker = "CRWD"  
+    calls, puts, current_price = get_options_data(ticker)
+    
+    save_to_csv(calls, f"{ticker}_calls_{datetime.now().strftime('%Y-%m-%d')}.csv")
+    save_to_csv(puts, f"{ticker}_puts_{datetime.now().strftime('%Y-%m-%d')}.csv")
+    print(f"CSV files saved for {ticker} calls and puts.")
+    
+    # Plot with default settings specified in vol surface function
+    plot_vol_surface(calls, f'{ticker} Call Options Volatility Surface', current_price)
+    plot_vol_surface(puts, f'{ticker} Put Options Volatility Surface', current_price)
+    
+    # min 30 day to expiry, 20% range around current price
+    plot_vol_surface(calls, f'{ticker} Call Options Volatility Surface (30+ days, 20% range)', 
+                     current_price, min_days_to_expiry=30, strike_range=0.20)
+    plot_vol_surface(puts, f'{ticker} Put Options Volatility Surface (30+ days, 20% range)', 
+                     current_price, min_days_to_expiry=30, strike_range=0.20)
+    
+    # Plot with adjusted z_scale
+    
+    #plot_vol_surface(calls, f'{ticker} Call Options Volatility Surface (0.5x scale)', 
+    #                 current_price, z_scale=0.5)
+    #plot_vol_surface(puts, f'{ticker} Put Options Volatility Surface (0.5x scale)', 
+    #                 current_price, z_scale=0.5)
+    
+    print(f"Current price of {ticker}: ${current_price:.2f}")
