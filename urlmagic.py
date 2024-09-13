@@ -4,7 +4,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from upcomingevents import Main  
 
-indx_tickers = ['XBI', 'SPY']
+indx_tickers = []
 
 def read_tickers_from_file(file_path):
     with open(file_path, 'r') as file:
@@ -45,7 +45,7 @@ def process_and_fetch(use_events=False, file_path=None):
     all_tickers = list(dict.fromkeys(all_tickers))
     print(f"All Tickers: {all_tickers}")
 
-    start_date = '2023-07-01'
+    start_date = '2015-07-01'
     end_date = '2024-06-30'
 
     all_data = []
@@ -68,10 +68,14 @@ def process_and_fetch(use_events=False, file_path=None):
 
     if all_data:
         df_all_data = pd.concat(all_data, ignore_index=True)
-        df_all_data['Date'] = pd.to_datetime(df_all_data['Date']).dt.strftime('%b %d, %Y')
+        # Ensure Date is in datetime format
+        df_all_data['Date'] = pd.to_datetime(df_all_data['Date'])
+        # Sort by Ticker first, then by Date in descending order
         df_all_data = df_all_data.sort_values(['Ticker', 'Date'], ascending=[True, False])
+        # Format the date after sorting
+        df_all_data['Date'] = df_all_data['Date'].dt.strftime('%b %d, %Y')
 
-        df_all_data.to_csv('scraped_yahoo_finance_data.csv', index=False)
+        df_all_data.to_csv('scraped_yahoo_finance_datatest.csv', index=False)
         print('Fetched data has been saved to scraped_yahoo_finance_data.csv')
     else:
         print('No data was fetched successfully.')
