@@ -118,19 +118,46 @@ def calculate_implied_volatilities(data, current_price, risk_free_rate=0.05):
 
 
 
-def plot_vol_surface(data, title, current_price, z_scale=1.0, max_days_to_expiry=180, interactive=True, use_calculated_iv=True, show_immediately=True, show_scatter=True, show_contours=True):
+def plot_vol_surface(data, title, current_price, z_scale=1.0, max_days_to_expiry=180, interactive=True, use_calculated_iv=True, show_immediately=True, show_scatter=True, show_contours=True, show_contour_projections=True, show_atm_marker=True):
     # Use calculated IV if available, otherwise fall back to yfinance
     iv_column = 'CalculatedIV' if use_calculated_iv and 'CalculatedIV' in data.columns else 'impliedVolatility'
 
-    # Filter by expiry only, keep all strikes that have valid IV
+    # Filter by expiry and IV validity first
     filtered_data = data[(data['DaysToExpiry'] <= max_days_to_expiry) &
                          (data['DaysToExpiry'] >= 1) &
                          (data[iv_column].notna()) &
                          (data[iv_column] > 0) &
                          (data[iv_column] < 5)]  # Allow higher IVs for volatile stocks
-
-    print(f"Filtering {title}: {len(data)} -> {len(filtered_data)} points")
-    print(f"Available strikes: {sorted(filtered_data['strike'].unique())}")
+    
+    # Smart strike filtering based on number of unique strikes
+    unique_strikes = sorted(filtered_data['strike'].unique())
+    num_strikes = len(unique_strikes)
+    
+    print(f"Initial filtering {title}: {len(data)} -> {len(filtered_data)} points")
+    print(f"Unique strikes found: {num_strikes}")
+    
+    # Apply strike range filtering for stocks with many strikes (threshold: 15 strikes)
+    if num_strikes > 15:
+        # Filter to strikes within 50% of ATM (25% below to 50% above)
+        lower_bound = current_price * 0.75
+        upper_bound = current_price * 1.5
+        
+        strike_filtered_data = filtered_data[
+            (filtered_data['strike'] >= lower_bound) & 
+            (filtered_data['strike'] <= upper_bound)
+        ]
+        
+        strikes_in_range = sorted(strike_filtered_data['strike'].unique())
+        print(f"Strike filtering applied: {num_strikes} -> {len(strikes_in_range)} strikes")
+        print(f"Strike range: ${lower_bound:.2f} - ${upper_bound:.2f} (ATM: ${current_price:.2f})")
+        print(f"Strikes used: {strikes_in_range}")
+        
+        filtered_data = strike_filtered_data
+    else:
+        print(f"Using all {num_strikes} strikes (below threshold of 15)")
+        print(f"Available strikes: {unique_strikes}")
+    
+    print(f"Final data points: {len(filtered_data)}")
     print(f"Days range: {filtered_data['DaysToExpiry'].min()} - {filtered_data['DaysToExpiry'].max()}")
     print(f"IV range: {filtered_data[iv_column].min():.1%} - {filtered_data[iv_column].max():.1%}")
 
@@ -199,7 +226,7 @@ def plot_vol_surface(data, title, current_price, z_scale=1.0, max_days_to_expiry
                         show=show_contours,
                         usecolormap=True,
                         highlightcolor="rgba(226,232,240,0.9)",  # Light contour lines for dark theme
-                        project_z=True,
+                        project_z=show_contour_projections,
                         width=1.5
                     )
                 )
@@ -224,37 +251,22 @@ def plot_vol_surface(data, title, current_price, z_scale=1.0, max_days_to_expiry
                 hovertemplate='Strike: $%{x:.0f}<br>Days: %{y:.0f}<br>Vol: %{z:.1%}<extra></extra>'
             ))
 
-        # Elegant ATM reference plane
-        atm_y = np.linspace(y.min(), y.max(), 20)
-        atm_z = np.linspace(z.min(), z.max(), 20)
-        ATM_Y, ATM_Z = np.meshgrid(atm_y, atm_z)
-        ATM_X = np.full(ATM_Y.shape, current_price)
-
-        fig.add_trace(go.Surface(
-            x=ATM_X, y=ATM_Y, z=ATM_Z,
-            opacity=0.3,
-            colorscale=[[0, 'rgba(255,215,0,0.8)'], [1, 'rgba(255,215,0,0.8)']],  # Golden plane
-            showscale=False,
-            name=f'ATM Plane (${current_price:.2f})',
-            hovertemplate=f'ATM Strike: ${current_price:.2f}<extra></extra>',
-            lighting=dict(ambient=0.8, diffuse=0.2)
-        ))
-
-        # Add subtle ATM marker at the intersection
-        fig.add_trace(go.Scatter3d(
-            x=[current_price],
-            y=[y.mean()],
-            z=[z.mean()],
-            mode='markers',
-            marker=dict(
-                size=12,
-                color='gold',
-                symbol='diamond',
-                line=dict(width=2, color='rgba(255,255,255,0.8)')
-            ),
-            name='ATM Reference',
-            hovertemplate=f'At-The-Money<br>Strike: ${current_price:.2f}<extra></extra>'
-        ))
+        # Add subtle ATM marker at the intersection if toggled on
+        if show_atm_marker:
+            fig.add_trace(go.Scatter3d(
+                x=[current_price],
+                y=[y.mean()],
+                z=[z.mean()],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color='gold',
+                    symbol='diamond',
+                    line=dict(width=2, color='rgba(255,255,255,0.8)')
+                ),
+                name='ATM Reference',
+                hovertemplate=f'At-The-Money<br>Strike: ${current_price:.2f}<extra></extra>'
+            ))
 
         fig.update_layout(
             title=dict(
@@ -335,7 +347,7 @@ def plot_vol_surface(data, title, current_price, z_scale=1.0, max_days_to_expiry
         plt.show()
 
 if __name__ == "__main__":
-    ticker = "ATYR"
+    ticker = "MU"
     print(f"Fetching options data for {ticker}...")
     calls, puts, current_price = get_options_data(ticker)
 
@@ -369,22 +381,22 @@ if __name__ == "__main__":
     figures = []
 
     print("Processing call options...")
-    fig1 = plot_vol_surface(calls, f'{ticker} Call Options - Calculated IV', current_price, max_days_to_expiry=180, show_immediately=False)
+    fig1 = plot_vol_surface(calls, f'{ticker} Call Options - Calculated IV', current_price, max_days_to_expiry=180, show_immediately=False, show_scatter=True, show_contours=True, show_contour_projections=True, show_atm_marker=True)
     if fig1:
         figures.append((fig1, f'{ticker}_Call_Options_Calculated_IV'))
 
     print("Processing put options...")
-    fig2 = plot_vol_surface(puts, f'{ticker} Put Options - Calculated IV', current_price, max_days_to_expiry=180, show_immediately=False)
+    fig2 = plot_vol_surface(puts, f'{ticker} Put Options - Calculated IV', current_price, max_days_to_expiry=180, show_immediately=False, show_scatter=True, show_contours=True, show_contour_projections=True, show_atm_marker=True)
     if fig2:
         figures.append((fig2, f'{ticker}_Put_Options_Calculated_IV'))
 
     print("Processing short-term call options...")
-    fig3 = plot_vol_surface(calls, f'{ticker} Call Options - Short Term', current_price, max_days_to_expiry=60, show_immediately=False)
+    fig3 = plot_vol_surface(calls, f'{ticker} Call Options - Short Term', current_price, max_days_to_expiry=60, show_immediately=False, show_scatter=True, show_contours=False, show_contour_projections=False, show_atm_marker=True)
     if fig3:
         figures.append((fig3, f'{ticker}_Call_Options_Short_Term'))
 
     print("Processing short-term put options...")
-    fig4 = plot_vol_surface(puts, f'{ticker} Put Options - Short Term', current_price, max_days_to_expiry=60, show_immediately=False)
+    fig4 = plot_vol_surface(puts, f'{ticker} Put Options - Short Term', current_price, max_days_to_expiry=60, show_immediately=False, show_scatter=False, show_contours=True, show_contour_projections=False, show_atm_marker=True)
     if fig4:
         figures.append((fig4, f'{ticker}_Put_Options_Short_Term'))
 
